@@ -35,6 +35,7 @@ pub struct App {
     exit: bool,
     actions: Vec<Action>,
     modules: Vec<Script>,
+    status: String,
 }
 
 #[allow(dead_code)]
@@ -47,7 +48,7 @@ struct UpdateArgs {
 #[serde(tag = "type")]
 enum UpdateResult {
     HTTP { url: String, method: String },
-    PING { message: String, status: u16 },
+    STATUS {message: String, }
 }
 
 fn exec(app: &mut App) -> Result<()> {
@@ -68,9 +69,10 @@ fn exec(app: &mut App) -> Result<()> {
                 UpdateResult::HTTP { url, .. } => {
                     log::println(&url)?;
                 }
-                UpdateResult::PING { .. } => {
-                    log::println("PING")?;
-                } // _ => {}
+                UpdateResult::STATUS { message } => {
+                    app.status = message.to_owned();
+                }
+                // _ => {}
             }
         }
     }
@@ -83,6 +85,7 @@ impl App {
             exit: false,
             actions,
             modules: vec![],
+            status: String::from("Loading..."),
         }
     }
 
@@ -184,7 +187,7 @@ impl Widget for &mut App {
             .render(left_layout[0], buf);
 
         let status_block = Block::new().borders(Borders::NONE).green();
-        Paragraph::new("Loading...")
+        Paragraph::new(self.status.to_owned())
             .block(status_block)
             .render(left_layout[1], buf);
     }
