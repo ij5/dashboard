@@ -1,8 +1,8 @@
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use actions::Action;
 use anyhow::Result;
-use crossterm::event::{self, KeyCode, KeyEventKind};
+use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use js_sandbox::Script;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -28,7 +28,6 @@ fn main() -> Result<()> {
     App::new(actions).run(&mut terminal)?;
 
     tui::restore()?;
-
     Ok(())
 }
 
@@ -45,16 +44,18 @@ struct UpdateArgs {
 }
 
 #[derive(Deserialize)]
+#[serde(tag = "type")]
 enum UpdateResult {
-    HTTP { url: String },
+    HTTP { url: String, method: String },
+    PING { message: String, status: u16 },
 }
 
-fn interval(app: &mut App) -> Result<()> {
+fn exec(app: &mut App) -> Result<()> {
     for module in app.modules.iter_mut() {
         let args = UpdateArgs {
             time: SystemTime::now(),
         };
-        let result: js_sandbox::JsResult<UpdateResult> = module.call("update", (args,));
+        let result: js_sandbox::JsResult<Vec<UpdateResult>> = module.call("update", (args,));
         let result = match result {
             Ok(res) => res,
             Err(e) => {
@@ -62,9 +63,14 @@ fn interval(app: &mut App) -> Result<()> {
                 continue;
             }
         };
-        match result {
-            UpdateResult::HTTP { url } => {
-                log::println(&url)?;
+        for res in result.iter() {
+            match res {
+                UpdateResult::HTTP { url, .. } => {
+                    log::println(&url)?;
+                }
+                UpdateResult::PING { .. } => {
+                    log::println("PING")?;
+                } // _ => {}
             }
         }
     }
@@ -91,8 +97,8 @@ impl App {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
             if time.elapsed().as_millis() > 1000 {
+                exec(self)?;
                 time = Instant::now();
-                interval(self)?;
             }
         }
         Ok(())
@@ -101,19 +107,29 @@ impl App {
         frame.render_widget(self, frame.size());
     }
     fn handle_events(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        match event::read()? {
-            event::Event::Key(key) => {
-                if key.kind == KeyEventKind::Press {
-                    self.handle_key_event(key);
+        match poll(Duration::from_millis(1000)) {
+            Ok(result) => {
+                if !result {
+                    return Ok(());
+                }
+                match event::read()? {
+                    event::Event::Key(key) => {
+                        if key.kind == KeyEventKind::Press {
+                            self.handle_key_event(key);
+                        }
+                    }
+                    event::Event::Resize(w, h) => {
+                        let size = terminal.size()?;
+                        if w != size.width || h != size.height {
+                            terminal.resize(Rect::new(0, 0, w, h))?;
+                        }
+                    }
+                    _ => {}
                 }
             }
-            event::Event::Resize(w, h) => {
-                let size = terminal.size()?;
-                if w != size.width || h != size.height {
-                    terminal.resize(Rect::new(0, 0, w, h))?;
-                }
+            Err(e) => {
+                log::println(&format!("Error: {:?}", e))?;
             }
-            _ => {}
         }
         Ok(())
     }

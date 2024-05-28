@@ -9,7 +9,7 @@ candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.
 candle-nn = { git = "https://github.com/huggingface/candle.git", version = "0.5.1" }
 cpal = "0.15.3"
 crossbeam-channel = "0.5.13"
-crossterm = "0.27.0"
+crossterm = { version = "0.27.0" }
 js-sandbox = "=0.2.0-rc.2"
 rand = "0.8.5"
 ratatui = { version = "0.26.3", features = ["all-widgets"] }
