@@ -1,9 +1,9 @@
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use actions::Action;
 use anyhow::Result;
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
-use js_sandbox::Script;
+use js_sandbox::{CallArgs, Script};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -21,6 +21,7 @@ mod tui;
 
 fn main() -> Result<()> {
     std::fs::write("run.log", "")?;
+    let _ = std::fs::create_dir("scripts");
     log::println("Program Started...")?;
     let actions = actions::initialize_scripts()?;
     let mut terminal = tui::init()?;
@@ -38,32 +39,36 @@ pub struct App {
     status: String,
 }
 
-#[allow(dead_code)]
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct UpdateArgs {
-    time: SystemTime,
+    time: u128,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type")]
 enum UpdateResult {
     HTTP { url: String, method: String },
-    STATUS {message: String, }
+    STATUS { message: String },
 }
 
 fn exec(app: &mut App) -> Result<()> {
     for module in app.modules.iter_mut() {
         let args = UpdateArgs {
-            time: SystemTime::now(),
+            time: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis(),
         };
-        let result: js_sandbox::JsResult<Vec<UpdateResult>> = module.call("update", (args,));
-        let result = match result {
-            Ok(res) => res,
-            Err(e) => {
-                log::println(&format!("Error: {:?}", e))?;
-                continue;
-            }
-        };
+        let result = module.call::<(UpdateArgs,), Vec<UpdateResult>>("update", (args,)).unwrap();
+        // let result = match result {
+        //     Ok(res) => res,
+        //     Err(e) => {
+        //         // log::println(&format!("Error: {:?}", e))?;
+        //         log::println(&format!("PANIC1: {:?}", e))?;
+        //         continue;
+        //         // continue;
+        //     }
+        // };
         for res in result.iter() {
             match res {
                 UpdateResult::HTTP { url, .. } => {
@@ -71,8 +76,7 @@ fn exec(app: &mut App) -> Result<()> {
                 }
                 UpdateResult::STATUS { message } => {
                     app.status = message.to_owned();
-                }
-                // _ => {}
+                } // _ => {}
             }
         }
     }
@@ -92,7 +96,7 @@ impl App {
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         for action in self.actions.iter() {
             let mut script = Script::from_string(&action.code)?;
-            script.call("init", (action.name.to_owned(),))?;
+            script.call::<(String,), ()>("init", (action.name.to_owned(),))?;
             self.modules.push(script);
         }
         let mut time = Instant::now();
