@@ -1,9 +1,7 @@
-use std::time::Instant;
-
 use actions::Action;
 use anyhow::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
-use deno_core::{JsRuntime, RuntimeOptions};
+use js_sandbox::Script;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -16,7 +14,6 @@ use ratatui::{
 
 mod actions;
 mod log;
-mod ops;
 mod tui;
 
 fn main() -> Result<()> {
@@ -35,48 +32,21 @@ fn main() -> Result<()> {
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
-    runtime: JsRuntime,
 }
 
 impl App {
     pub fn new(actions: Vec<Action>) -> Self {
-        let runtime = JsRuntime::new(RuntimeOptions {
-            extensions: ops::get_extensions(),
-            ..Default::default()
-        });
         Self {
             exit: false,
             actions,
-            runtime,
         }
     }
 
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let default_scripts = include_str!("std.js");
-        // let mut script = String::new();
         for action in self.actions.iter() {
-            // script.push_str(&action.code);
-            // script.push_str("\n\n");
-            if action.name.starts_with("render_") {
-                continue;
-            }
-            let result = self.runtime.execute_script(
-                "<main>",
-                default_scripts.to_string()
-                    + &action.code.clone()
-                    + &format!("\n\n{}()\n", action.name.to_owned()),
-            );
-            match result {
-                Ok(_) => {
-                    log::println(&format!("Load script success: {}", action.name.clone()))?;
-                }
-                Err(e) => {
-                    log::println(&e.to_string())?;
-                }
-            }
+            let mut script = Script::from_string(&action.code)?;
+            script.call("init", (action.name.to_owned(),))?;
         }
-        // let script = default_scripts.to_owned() + &script;
-        // log::println(&script)?;
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
@@ -84,26 +54,7 @@ impl App {
         Ok(())
     }
     fn render_frame(&mut self, frame: &mut Frame) {
-        let default_scripts = include_str!("draw.js");
-        let now = Instant::now();
-        for action in self.actions.iter() {
-            if !action.name.starts_with("render_") {
-                continue;
-            }
-            let result = self.runtime.execute_script(
-                "<draw>",
-                default_scripts.to_string()
-                    + &action.code.clone()
-                    + &format!("\n\n{}()", action.name.replace("render_", "")),
-            );
-            match result {
-                Err(e) => {
-                    let _ = log::println(&format!("{:?}", e));
-                }
-                _ => {}
-            }
-        }
-        let _ = log::println(&format!("Elapsed time: {}", now.elapsed().as_millis()));
+        
         frame.render_widget(self, frame.size());
     }
     fn handle_events(&mut self, terminal: &mut tui::TUI) -> Result<()> {

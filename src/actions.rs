@@ -9,7 +9,6 @@ pub struct Action {
 }
 
 pub fn initialize_scripts() -> Result<Vec<Action>> {
-    let _ = std::fs::create_dir("scripts");
     let scripts = fs::read_dir("scripts")?;
     let mut actions = vec![];
     for filename in scripts {
@@ -27,3 +26,4 @@ pub fn initialize_scripts() -> Result<Vec<Action>> {
     }
     Ok(actions)
 }
+
