@@ -1,3 +1,5 @@
+use std::time::{Instant, SystemTime};
+
 use actions::Action;
 use anyhow::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
@@ -11,6 +13,7 @@ use ratatui::{
     },
     Frame,
 };
+use serde::{Deserialize, Serialize};
 
 mod actions;
 mod log;
@@ -32,6 +35,40 @@ fn main() -> Result<()> {
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
+    modules: Vec<Script>,
+}
+
+#[allow(dead_code)]
+#[derive(Serialize)]
+struct UpdateArgs {
+    time: SystemTime,
+}
+
+#[derive(Deserialize)]
+enum UpdateResult {
+    HTTP { url: String },
+}
+
+fn interval(app: &mut App) -> Result<()> {
+    for module in app.modules.iter_mut() {
+        let args = UpdateArgs {
+            time: SystemTime::now(),
+        };
+        let result: js_sandbox::JsResult<UpdateResult> = module.call("update", (args,));
+        let result = match result {
+            Ok(res) => res,
+            Err(e) => {
+                log::println(&format!("Error: {:?}", e))?;
+                continue;
+            }
+        };
+        match result {
+            UpdateResult::HTTP { url } => {
+                log::println(&url)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl App {
@@ -39,6 +76,7 @@ impl App {
         Self {
             exit: false,
             actions,
+            modules: vec![],
         }
     }
 
@@ -46,15 +84,20 @@ impl App {
         for action in self.actions.iter() {
             let mut script = Script::from_string(&action.code)?;
             script.call("init", (action.name.to_owned(),))?;
+            self.modules.push(script);
         }
+        let mut time = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
+            if time.elapsed().as_millis() > 1000 {
+                time = Instant::now();
+                interval(self)?;
+            }
         }
         Ok(())
     }
     fn render_frame(&mut self, frame: &mut Frame) {
-        
         frame.render_widget(self, frame.size());
     }
     fn handle_events(&mut self, terminal: &mut tui::TUI) -> Result<()> {
