@@ -8,10 +8,7 @@ use anyhow::Result;
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use js_sandbox::Script;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
-    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect}, style::{Color, Style, Stylize}, text::Text, widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget}, Frame
 };
 use serde::{Deserialize, Serialize};
 
@@ -206,23 +203,25 @@ impl Widget for &mut App {
             .padding(Padding::horizontal(1))
             .green();
 
+        let (status_text, load_ratio) = if self.loaded.len() == self.modules.len() {
+            ("로드 완료!", 1.0)
+        } else {
+            ("로딩 중...", self.loaded.len() as f64 / self.modules.len() as f64)
+        };
         LineGauge::default()
             .gauge_style(Style::default().fg(Color::White).bg(Color::Green).bold())
             .block(status_block)
-            .ratio(0.4)
+            .ratio(load_ratio)
             .render(left_layout[1], buf);
-
-        Paragraph::new("Loading...")
+        Paragraph::new(status_text)
             .alignment(Alignment::Center)
             .green()
             .bold()
             .render(status_layout[1], buf);
 
-        Paragraph::new(self.loaded.join("\n").to_string())
+        Paragraph::new(Text::raw(include_str!("./logo.txt")).light_blue())
+            .centered()
             .block(visual_block)
-            .alignment(Alignment::Center)
-            .green()
-            .bold()
             .render(left_layout[0], buf);
     }
 }
