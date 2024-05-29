@@ -10,7 +10,7 @@ use js_sandbox::Script;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
-    widgets::{Block, Borders, Gauge, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
     Frame,
 };
 use serde::{Deserialize, Serialize};
@@ -182,7 +182,7 @@ impl Widget for &mut App {
             .split(area);
         let left_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(90), Constraint::Percentage(10)])
+            .constraints(vec![Constraint::Fill(1), Constraint::Length(4)])
             .split(layout[0]);
 
         let _right_layout = Layout::default()
@@ -195,11 +195,28 @@ impl Widget for &mut App {
             .title_style(Style::new().bold().green())
             .yellow(); //.render(left_layout[0], buf);
 
+        let status_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(left_layout[1]);
+
         let status_block = Block::bordered()
-            .title("Status")
+            .title("STATUS")
             .title_style(Style::default().yellow())
-            .padding(Padding::vertical(10))
+            .padding(Padding::horizontal(1))
             .green();
+
+        LineGauge::default()
+            .gauge_style(Style::default().fg(Color::White).bg(Color::Green).bold())
+            .block(status_block)
+            .ratio(0.4)
+            .render(left_layout[1], buf);
+
+        Paragraph::new("Loading...")
+            .alignment(Alignment::Center)
+            .green()
+            .bold()
+            .render(status_layout[1], buf);
 
         Paragraph::new(self.loaded.join("\n").to_string())
             .block(visual_block)
@@ -207,11 +224,5 @@ impl Widget for &mut App {
             .green()
             .bold()
             .render(left_layout[0], buf);
-
-        Gauge::default()
-            .block(status_block)
-            .gauge_style(Style::default().fg(Color::White).bg(Color::Green))
-            .percent(50)
-            .render(left_layout[1], buf);
     }
 }
