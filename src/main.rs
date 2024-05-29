@@ -9,8 +9,8 @@ use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use js_sandbox::Script;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Style, Stylize},
-    widgets::{Block, Borders, Paragraph, Widget},
+    style::{Color, Style, Stylize},
+    widgets::{Block, Borders, Gauge, Padding, Paragraph, Widget},
     Frame,
 };
 use serde::{Deserialize, Serialize};
@@ -159,7 +159,6 @@ impl App {
         Ok(())
     }
     fn handle_key_event(&mut self, key_event: event::KeyEvent) {
-        log::println("Key pressed.").unwrap();
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Esc => self.exit(),
@@ -179,10 +178,11 @@ impl Widget for &mut App {
         let layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(30), Constraint::Percentage(70)])
+            .margin(1)
             .split(area);
         let left_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Fill(1), Constraint::Max(1)])
+            .constraints(vec![Constraint::Percentage(90), Constraint::Percentage(10)])
             .split(layout[0]);
 
         let _right_layout = Layout::default()
@@ -195,10 +195,11 @@ impl Widget for &mut App {
             .title_style(Style::new().bold().green())
             .yellow(); //.render(left_layout[0], buf);
 
-        let status_block = Block::new().borders(Borders::ALL).green();
-        Paragraph::new(self.status.to_owned())
-            .block(status_block)
-            .render(left_layout[1], buf);
+        let status_block = Block::bordered()
+            .title("Status")
+            .title_style(Style::default().yellow())
+            .padding(Padding::vertical(10))
+            .green();
 
         Paragraph::new(self.loaded.join("\n").to_string())
             .block(visual_block)
@@ -206,5 +207,11 @@ impl Widget for &mut App {
             .green()
             .bold()
             .render(left_layout[0], buf);
+
+        Gauge::default()
+            .block(status_block)
+            .gauge_style(Style::default().fg(Color::White).bg(Color::Green))
+            .percent(50)
+            .render(left_layout[1], buf);
     }
 }
