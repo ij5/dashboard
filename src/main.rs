@@ -1,16 +1,16 @@
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use actions::Action;
 use anyhow::Result;
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use js_sandbox::Script;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    widgets::{
-        canvas::{self, Canvas},
-        Block, Borders, Paragraph, Widget,
-    },
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Style, Stylize},
+    widgets::{Block, Borders, Paragraph, Widget},
     Frame,
 };
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 extern crate js_sandbox;
 
 mod actions;
+mod events;
 mod log;
 mod tui;
 
@@ -37,8 +38,9 @@ fn main() -> Result<()> {
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
-    modules: Vec<Script>,
+    modules: HashMap<String, Script>,
     status: String,
+    loaded: Vec<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -58,8 +60,9 @@ impl App {
         Self {
             exit: false,
             actions,
-            modules: vec![],
+            modules: HashMap::new(),
             status: String::from("Loading..."),
+            loaded: vec![],
         }
     }
 
@@ -77,13 +80,12 @@ impl App {
                     continue;
                 }
             }
-            self.modules.push(script);
+            self.modules.insert(action.name.to_owned(), script);
         }
         let mut time = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
-            log::println(&format!("elapsed: {}", time.elapsed().as_millis()))?;
             if time.elapsed().as_millis() > 1000 {
                 self.exec()?;
                 time = Instant::now();
@@ -92,7 +94,7 @@ impl App {
         Ok(())
     }
     pub fn exec(&mut self) -> Result<()> {
-        for (i, module) in self.modules.iter_mut().enumerate() {
+        for (name, module) in self.modules.iter_mut() {
             let args = UpdateArgs {
                 time: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -104,16 +106,14 @@ impl App {
             let result = match result {
                 Ok(r) => r,
                 Err(_) => {
-                    let name = if let Some(r) = self.actions.get(i) {
-                        r.name.clone()
-                    } else {
-                        continue;
-                    };
-                    log::println(&format!("No update function found in script {}", name,))?;
-                    self.actions.remove(i);
+                    log::println(&format!("No update function found in script {}", name))?;
                     continue;
                 }
             };
+            if !self.loaded.contains(&name.to_owned()) {
+                self.loaded.push(name.to_owned());
+            }
+
             let result: Vec<UpdateResult> = serde_json::from_str(&result)?;
             for res in result.iter() {
                 match res {
@@ -185,33 +185,26 @@ impl Widget for &mut App {
             .constraints(vec![Constraint::Fill(1), Constraint::Max(1)])
             .split(layout[0]);
 
+        let _right_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .split(layout[1]);
+
         let visual_block = Block::new()
             .borders(Borders::ALL)
             .title("R2")
             .title_style(Style::new().bold().green())
             .yellow(); //.render(left_layout[0], buf);
 
-        let canvas_size = left_layout[0].as_size();
-        let w = canvas_size.width as f64 / 2.;
-        let h = canvas_size.height as f64 / 2.;
-        Canvas::default()
-            .block(visual_block)
-            .paint(|ctx| {
-                ctx.draw(&canvas::Circle {
-                    color: Color::LightBlue,
-                    radius: 5.,
-                    x: 0.,
-                    y: 0.,
-                });
-                ctx.layer();
-            })
-            .x_bounds([-w, w])
-            .y_bounds([-h, h])
-            .render(left_layout[0], buf);
-
-        let status_block = Block::new().borders(Borders::NONE).green();
+        let status_block = Block::new().borders(Borders::ALL).green();
         Paragraph::new(self.status.to_owned())
             .block(status_block)
             .render(left_layout[1], buf);
+
+        Paragraph::new(self.loaded.join("\n").to_string())
+            .block(visual_block)
+            .alignment(Alignment::Center)
+            .green()
+            .bold()
+            .render(left_layout[0], buf);
     }
 }
