@@ -3,10 +3,6 @@ name = "assistant"
 version = "0.1.0"
 edition = "2021"
 
-[profile.release-with-debug]
-inherits = "release"
-debug = true
-
 [dependencies]
 anyhow = "1.0.86"
 candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.5.1" }
