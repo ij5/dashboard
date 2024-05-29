@@ -53,31 +53,6 @@ enum UpdateResult {
     STATUS { message: String },
 }
 
-fn exec(app: &mut App) -> Result<()> {
-    for module in app.modules.iter_mut() {
-        let args = UpdateArgs {
-            time: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_millis(),
-        };
-        
-        let result = module.call::<(UpdateArgs,), String>("update", (args,)).unwrap();
-        let result: Vec<UpdateResult> = serde_json::from_str(&result)?;
-        for res in result.iter() {
-            match res {
-                UpdateResult::HTTP { url, .. } => {
-                    log::println(&url)?;
-                }
-                UpdateResult::STATUS { message } => {
-                    app.status = message.to_owned();
-                } // _ => {}
-            }
-        }
-    }
-    Ok(())
-}
-
 impl App {
     pub fn new(actions: Vec<Action>) -> Self {
         Self {
@@ -91,16 +66,64 @@ impl App {
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         for action in self.actions.iter() {
             let mut script = Script::from_string(&action.code)?;
-            script.call::<(String,), ()>("init", (action.name.to_owned(),))?;
+            let result = script.call::<(String,), ()>("init", (action.name.to_owned(),));
+            match result {
+                Ok(_) => {}
+                Err(_) => {
+                    log::println(&format!(
+                        "No init function found in file {}",
+                        action.name.to_owned(),
+                    ))?;
+                    continue;
+                }
+            }
             self.modules.push(script);
         }
         let mut time = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
+            log::println(&format!("elapsed: {}", time.elapsed().as_millis()))?;
             if time.elapsed().as_millis() > 1000 {
-                exec(self)?;
+                self.exec()?;
                 time = Instant::now();
+            }
+        }
+        Ok(())
+    }
+    pub fn exec(&mut self) -> Result<()> {
+        for (i, module) in self.modules.iter_mut().enumerate() {
+            let args = UpdateArgs {
+                time: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis(),
+            };
+
+            let result = module.call::<(UpdateArgs,), String>("update", (args,));
+            let result = match result {
+                Ok(r) => r,
+                Err(_) => {
+                    let name = if let Some(r) = self.actions.get(i) {
+                        r.name.clone()
+                    } else {
+                        continue;
+                    };
+                    log::println(&format!("No update function found in script {}", name,))?;
+                    self.actions.remove(i);
+                    continue;
+                }
+            };
+            let result: Vec<UpdateResult> = serde_json::from_str(&result)?;
+            for res in result.iter() {
+                match res {
+                    UpdateResult::HTTP { url, .. } => {
+                        log::println(&url)?;
+                    }
+                    UpdateResult::STATUS { message } => {
+                        self.status = message.to_owned();
+                    } // _ => {}
+                }
             }
         }
         Ok(())
@@ -136,6 +159,7 @@ impl App {
         Ok(())
     }
     fn handle_key_event(&mut self, key_event: event::KeyEvent) {
+        log::println("Key pressed.").unwrap();
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Esc => self.exit(),

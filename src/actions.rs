@@ -2,7 +2,7 @@ use std::{ffi::OsStr, fs, path::Path};
 
 use anyhow::Result;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Action {
     pub code: String,
     pub name: String,
