@@ -3,7 +3,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use actions::Action;
 use anyhow::Result;
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
-use js_sandbox::{CallArgs, Script};
+use js_sandbox::Script;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -14,6 +14,8 @@ use ratatui::{
     Frame,
 };
 use serde::{Deserialize, Serialize};
+
+extern crate js_sandbox;
 
 mod actions;
 mod log;
@@ -59,16 +61,9 @@ fn exec(app: &mut App) -> Result<()> {
                 .expect("Time went backwards")
                 .as_millis(),
         };
-        let result = module.call::<(UpdateArgs,), Vec<UpdateResult>>("update", (args,)).unwrap();
-        // let result = match result {
-        //     Ok(res) => res,
-        //     Err(e) => {
-        //         // log::println(&format!("Error: {:?}", e))?;
-        //         log::println(&format!("PANIC1: {:?}", e))?;
-        //         continue;
-        //         // continue;
-        //     }
-        // };
+        
+        let result = module.call::<(UpdateArgs,), String>("update", (args,)).unwrap();
+        let result: Vec<UpdateResult> = serde_json::from_str(&result)?;
         for res in result.iter() {
             match res {
                 UpdateResult::HTTP { url, .. } => {
