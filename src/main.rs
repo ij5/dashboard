@@ -5,18 +5,23 @@ use std::{
 
 use actions::Action;
 use anyhow::Result;
+use boa_engine::{
+    object::builtins::JsFunction, value::TryFromJs, Context, Finalize, JsData, JsError, JsObject, JsValue, NativeFunction, Source
+};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
-use js_sandbox::Script;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect}, style::{Color, Style, Stylize}, text::Text, widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget}, Frame
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Style, Stylize},
+    text::Text,
+    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
+    Frame,
 };
 use serde::{Deserialize, Serialize};
-
-extern crate js_sandbox;
 
 mod actions;
 mod events;
 mod log;
+mod modules;
 mod tui;
 
 fn main() -> Result<()> {
@@ -26,58 +31,78 @@ fn main() -> Result<()> {
     let actions = actions::initialize_scripts()?;
     let mut terminal = tui::init()?;
 
-    App::new(actions).run(&mut terminal)?;
+    let result = App::new(actions).run(&mut terminal);
 
     tui::restore()?;
-    Ok(())
+
+    result
 }
 
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
-    modules: HashMap<String, Script>,
-    status: String,
+    modules: HashMap<String, Module>,
     loaded: Vec<String>,
+    context: Context,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize)]
 struct UpdateArgs {
     time: u128,
 }
 
-#[derive(Deserialize, Clone, Debug, PartialEq)]
-#[serde(tag = "type")]
-enum UpdateResult {
-    HTTP { url: String, method: String },
-    STATUS { message: String },
+#[derive(Debug, TryFromJs)]
+struct Module {
+    init: JsFunction,
+    update: JsFunction,
+}
+
+fn e(x: JsError) -> anyhow::Error {
+    anyhow::Error::msg(x.to_string())
 }
 
 impl App {
     pub fn new(actions: Vec<Action>) -> Self {
+        let context = Context::default();
         Self {
             exit: false,
             actions,
             modules: HashMap::new(),
-            status: String::from("Loading..."),
             loaded: vec![],
+            context,
         }
     }
 
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
+        self.context
+            .register_global_callable(
+                "fetch".into(),
+                0,
+                NativeFunction::from_fn_ptr(modules::fetch),
+            )
+            .map_err(e)?;
+        self.context
+            .register_global_callable(
+                "print".into(),
+                0,
+                NativeFunction::from_fn_ptr(modules::print),
+            )
+            .map_err(e)?;
         for action in self.actions.iter() {
-            let mut script = Script::from_string(&action.code)?;
-            let result = script.call::<(String,), ()>("init", (action.name.to_owned(),));
-            match result {
-                Ok(_) => {}
-                Err(_) => {
-                    log::println(&format!(
-                        "No init function found in file {}",
-                        action.name.to_owned(),
-                    ))?;
+            let result = match self.context.eval(Source::from_bytes(action.code.as_str())) {
+                Ok(res) => res,
+                Err(err) => {
+                    log::println(&format!("Error: {err}"))?;
                     continue;
                 }
-            }
-            self.modules.insert(action.name.to_owned(), script);
+            };
+            let module = Module::try_from_js(&result, &mut self.context).map_err(e)?;
+            module
+                .init
+                .call(&self.context.global_object().into(), &[], &mut self.context)
+                .map_err(e)?;
+            // module.init.call(this, args, context)
+            self.modules.insert(action.name.to_owned(), module);
         }
         let mut time = Instant::now();
         while !self.exit {
@@ -98,29 +123,13 @@ impl App {
                     .expect("Time went backwards")
                     .as_millis(),
             };
+            module
+                .update
+                .call(&self.context.global_object().into(), &[], &mut self.context)
+                .map_err(e)?;
 
-            let result = module.call::<(UpdateArgs,), String>("update", (args,));
-            let result = match result {
-                Ok(r) => r,
-                Err(_) => {
-                    log::println(&format!("No update function found in script {}", name))?;
-                    continue;
-                }
-            };
             if !self.loaded.contains(&name.to_owned()) {
                 self.loaded.push(name.to_owned());
-            }
-
-            let result: Vec<UpdateResult> = serde_json::from_str(&result)?;
-            for res in result.iter() {
-                match res {
-                    UpdateResult::HTTP { url, .. } => {
-                        log::println(&url)?;
-                    }
-                    UpdateResult::STATUS { message } => {
-                        self.status = message.to_owned();
-                    } // _ => {}
-                }
             }
         }
         Ok(())
@@ -206,7 +215,10 @@ impl Widget for &mut App {
         let (status_text, load_ratio) = if self.loaded.len() == self.modules.len() {
             ("로드 완료!", 1.0)
         } else {
-            ("로딩 중...", self.loaded.len() as f64 / self.modules.len() as f64)
+            (
+                "로딩 중...",
+                self.loaded.len() as f64 / self.modules.len() as f64,
+            )
         };
         LineGauge::default()
             .gauge_style(Style::default().fg(Color::White).bg(Color::Green).bold())
