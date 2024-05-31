@@ -1,5 +1,6 @@
 use boa_engine::{js_string, Context, JsArgs, JsError, JsNativeError, JsResult, JsValue};
-use futures_util::Future;
+// use futures_util::Future;
+use std::future::Future;
 
 use crate::log;
 

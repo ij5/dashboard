@@ -24,7 +24,8 @@ mod log;
 mod modules;
 mod tui;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     std::fs::write("run.log", "")?;
     let _ = std::fs::create_dir("scripts");
     log::println("Program Started...")?;
