@@ -6,7 +6,7 @@ use std::{
 use actions::Action;
 use anyhow::Result;
 use boa_engine::{
-    object::builtins::JsFunction, value::TryFromJs, Context, Finalize, JsData, JsError, JsObject, JsValue, NativeFunction, Source
+    js_string, object::builtins::JsFunction, value::TryFromJs, Context, JsError, JsValue, NativeFunction, Source
 };
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
@@ -16,7 +16,7 @@ use ratatui::{
     widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
     Frame,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 mod actions;
 mod events;
@@ -76,9 +76,9 @@ impl App {
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         self.context
             .register_global_callable(
-                "fetch".into(),
+                js_string!("fetch"),
                 0,
-                NativeFunction::from_fn_ptr(modules::fetch),
+                NativeFunction::from_async_fn(modules::fetch),
             )
             .map_err(e)?;
         self.context
@@ -125,7 +125,14 @@ impl App {
             };
             module
                 .update
-                .call(&self.context.global_object().into(), &[], &mut self.context)
+                .call(
+                    &self.context.global_object().into(),
+                    &[JsValue::from_json(
+                        &serde_json::to_value(args)?,
+                        &mut self.context,
+                    ).map_err(e)?],
+                    &mut self.context,
+                )
                 .map_err(e)?;
 
             if !self.loaded.contains(&name.to_owned()) {
