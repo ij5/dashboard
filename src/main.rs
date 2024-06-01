@@ -6,12 +6,18 @@ use std::{
 use actions::Action;
 use anyhow::Result;
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
+use modules::build_modules;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
     Frame,
+};
+use ratatui_image::{
+    picker::{Picker, ProtocolType},
+    protocol::StatefulProtocol,
+    FilterType, Resize, StatefulImage,
 };
 use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
 
@@ -49,6 +55,13 @@ pub struct App {
     interpreter: vm::Interpreter,
     current_loading: String,
     log: String,
+    images: HashMap<String, Img>,
+    picker: Picker,
+}
+
+struct Img {
+    image: Box<dyn StatefulProtocol>,
+    area: Rect,
 }
 
 impl App {
@@ -58,6 +71,8 @@ impl App {
         let interpreter = vm::Interpreter::with_init(Default::default(), |vm| {
             vm.add_native_modules(rustpython_stdlib::get_module_inits());
         });
+        let mut picker = Picker::new((8, 16));
+        picker.protocol_type = ProtocolType::Halfblocks;
         Self {
             exit: false,
             actions,
@@ -66,19 +81,15 @@ impl App {
             log: String::new(),
             failed: vec![],
             current_loading: String::new(),
+            picker,
+            images: HashMap::new(),
         }
     }
 
+    pub fn fetch(&mut self) {}
+
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let scope: PyResult<Scope> = self.interpreter.enter(|vm| {
-            let scope = vm.new_scope_with_builtins();
-            let print_fn = vm.new_function("print", modules::print);
-            // scope.globals.del_item("print", &vm)?;
-            scope.globals.set_item("print", print_fn.into(), &vm)?;
-            let fetch_fn = vm.new_function("fetch", modules::fetch);
-            scope.globals.set_item("fetch", fetch_fn.into(), &vm)?;
-            Ok(scope)
-        });
+        let scope: PyResult<Scope> = self.interpreter.enter(|vm| build_modules(vm));
         let scope = self.interpreter.enter(|vm| match scope {
             Ok(scope) => Some(scope),
             Err(e) => {
@@ -155,7 +166,20 @@ impl App {
         }
         Ok(())
     }
+    fn show_image(&mut self, name: String, path: String, area: Rect) -> Result<()> {
+        let dyn_img = image::io::Reader::open(path)?.decode()?;
+        let image = self.picker.new_resize_protocol(dyn_img);
+        self.images.insert(name, Img { image, area });
+        Ok(())
+    }
+    fn hide_image(&mut self, name: String) {
+        let _ = self.images.remove(name.as_str());
+    }
     fn render_frame(&mut self, frame: &mut Frame) {
+        for (_, img) in self.images.iter_mut() {
+            let s_image = StatefulImage::new(None).resize(Resize::Fit(Some(FilterType::Nearest)));
+            frame.render_stateful_widget(s_image, img.area, &mut img.image);
+        }
         frame.render_widget(self, frame.size());
     }
     fn handle_events(&mut self, terminal: &mut tui::TUI) -> Result<()> {
@@ -212,9 +236,21 @@ impl Widget for &mut App {
             .constraints(vec![Constraint::Fill(1), Constraint::Length(4)])
             .split(layout[0]);
 
-        let _right_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .split(layout[1]);
+        let right_layout =
+            Layout::new(Direction::Vertical, [Constraint::Percentage(100)]).split(layout[1]);
+
+        let right_block = Block::bordered()
+            // .light_blue() # Image stripe bug
+            .title("DASHBOARD")
+            .title_alignment(Alignment::Center);
+        let right_inner = right_block.inner(layout[1]);
+        right_block.render(right_layout[0], buf);
+        self.show_image(
+            "cloudmoon".to_owned(),
+            "cloudmoon.jpg".to_owned(),
+            right_inner,
+        )
+        .unwrap();
 
         let visual_block = Block::new()
             .borders(Borders::ALL)

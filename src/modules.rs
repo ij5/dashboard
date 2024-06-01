@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use futures::executor;
-use rustpython_vm::{PyResult, VirtualMachine};
+use rustpython_vm::{scope::Scope, PyResult, VirtualMachine};
 
 use crate::log;
 
@@ -24,6 +24,15 @@ use crate::log;
 //         Ok(())
 //     }
 // }
+
+pub fn build_modules(vm: &VirtualMachine) -> PyResult<Scope> {
+    let scope = vm.new_scope_with_builtins();
+    let print_fn = vm.new_function("print", print);
+    scope.globals.set_item("print", print_fn.into(), &vm)?;
+    let fetch_fn = vm.new_function("fetch", fetch);
+    scope.globals.set_item("fetch", fetch_fn.into(), &vm)?;
+    Ok(scope)
+}
 
 pub fn print(text: String) {
     let _ = log::println(&text);
