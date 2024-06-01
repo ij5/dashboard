@@ -9,11 +9,11 @@ use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::Text,
+    text::{Line, Text},
     widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
     Frame,
 };
-use rustpython_vm::{self as vm, convert::ToPyObject, pyclass, scope::Scope, AsObject, PyResult};
+use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
 
 mod actions;
 mod log;
@@ -37,24 +37,18 @@ async fn main() -> Result<()> {
         Err(e) => {
             let _ = log::println(e.backtrace().to_string().as_str());
             Err(anyhow::Error::msg(format!("{:?}", e)))
-        },
+        }
     }
 }
 
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
-    loaded: Vec<String>,
+    failed: Vec<String>,
     modules: HashMap<String, Scope>,
     interpreter: vm::Interpreter,
+    current_loading: String,
     log: String,
-}
-
-#[allow(dead_code)]
-#[pyclass(module = false, name = "UpdateArgs")]
-#[derive(Default, Debug)]
-struct UpdateArgs {
-    time: u128
 }
 
 impl App {
@@ -67,10 +61,11 @@ impl App {
         Self {
             exit: false,
             actions,
-            loaded: vec![],
             modules: HashMap::new(),
             interpreter,
             log: String::new(),
+            failed: vec![],
+            current_loading: String::new(),
         }
     }
 
@@ -84,13 +79,11 @@ impl App {
             scope.globals.set_item("fetch", fetch_fn.into(), &vm)?;
             Ok(scope)
         });
-        let scope = self.interpreter.enter(|vm| {
-            match scope {
-                Ok(scope) => Some(scope),
-                Err(e) => {
-                    log::println(e.as_object().repr(vm).unwrap().as_str()).expect("log failed");
-                    None
-                }
+        let scope = self.interpreter.enter(|vm| match scope {
+            Ok(scope) => Some(scope),
+            Err(e) => {
+                log::println(e.as_object().repr(vm).unwrap().as_str()).expect("log failed");
+                None
             }
         });
         let scope = if let Some(scope) = scope {
@@ -99,6 +92,8 @@ impl App {
             return Err(anyhow::Error::msg("no scope"));
         };
         for action in self.actions.clone() {
+            self.current_loading = action.name.to_owned();
+            terminal.draw(|frame| self.render_frame(frame))?;
             let scp = scope.clone();
             let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
                 let source = action.code.clone();
@@ -115,17 +110,18 @@ impl App {
                     self.modules.insert(action.name, res);
                 }
                 Err(e) => {
-                    let err = self.interpreter
-                        .enter(|vm| {
-                            match e.to_pyobject(vm).repr(vm) {
-                                Ok(err) => err.as_str().to_string(),
-                                Err(_) => "ERROR0111".to_owned()
-                            }
+                    let err = self
+                        .interpreter
+                        .enter(|vm| match e.to_pyobject(vm).repr(vm) {
+                            Ok(err) => err.as_str().to_string(),
+                            Err(_) => "ERROR0111".to_owned(),
                         });
-                    self.print(&err);
+                    log::println(&err)?;
+                    self.failed.push(action.name.to_owned());
                 }
             }
         }
+        self.current_loading.clear();
         let mut time = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -148,19 +144,16 @@ impl App {
                 Ok(_) => {}
                 Err(e) => {
                     self.interpreter.enter(|vm| {
-                        let _ = log::println(e.as_object().repr(vm).unwrap().as_str());
+                        let _ = log::println(&format!(
+                            "[{}] {}",
+                            name.to_owned(),
+                            e.as_object().repr(vm).unwrap().as_str()
+                        ));
                     });
                 }
             }
-            if !self.loaded.contains(&name.to_owned()) {
-                self.loaded.push(name.to_owned());
-            }
         }
         Ok(())
-    }
-    fn print(&mut self, text: &str) {
-        self.log.push_str(text);
-        self.log.push_str("\n");
     }
     fn render_frame(&mut self, frame: &mut Frame) {
         frame.render_widget(self, frame.size());
@@ -240,12 +233,20 @@ impl Widget for &mut App {
             .padding(Padding::horizontal(1))
             .green();
 
-        let (status_text, load_ratio) = if self.loaded.len() == self.modules.len() {
+        let status_text = format!(
+            "{} 로딩 중({}/{})...",
+            self.current_loading,
+            self.modules.len() + self.failed.len(),
+            self.actions.len()
+        );
+        let (status_text, load_ratio) = if self.modules.len() + self.failed.len()
+            == self.actions.len()
+        {
             ("로드 완료!", 1.0)
         } else {
             (
-                "로딩 중...",
-                self.loaded.len() as f64 / self.modules.len() as f64,
+                status_text.as_str(),
+                (self.modules.len() as f64 + self.failed.len() as f64) / self.actions.len() as f64,
             )
         };
         LineGauge::default()
@@ -253,10 +254,18 @@ impl Widget for &mut App {
             .block(status_block)
             .ratio(load_ratio)
             .render(left_layout[1], buf);
-        Paragraph::new(status_text)
+        let mut status_paragraph = vec![];
+        if self.failed.len() >= 1 {
+            status_paragraph.push("로드 실패:".to_owned().red());
+            for failed in self.failed.iter() {
+                status_paragraph.push(" ".into());
+                status_paragraph.push(failed.clone().light_red());
+            }
+        } else {
+            status_paragraph.push(status_text.to_owned().green());
+        }
+        Paragraph::new(Line::from(status_paragraph))
             .alignment(Alignment::Center)
-            .green()
-            .bold()
             .render(status_layout[1], buf);
 
         Paragraph::new(
@@ -264,7 +273,7 @@ impl Widget for &mut App {
         )
         .centered()
         .block(visual_block)
-        .wrap(Wrap { trim: true, })
+        .wrap(Wrap { trim: true })
         .render(left_layout[0], buf);
     }
 }

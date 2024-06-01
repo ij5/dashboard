@@ -2,8 +2,8 @@
 // use vm::pymodule;
 
 use anyhow::Result;
-use rustpython_vm::{builtins::{PyBaseException, PyException}, types::Constructor, PyObject, PyObjectRef, PyResult, VirtualMachine};
-use tokio::runtime::Runtime;
+use futures::executor;
+use rustpython_vm::{PyResult, VirtualMachine};
 
 use crate::log;
 
@@ -30,7 +30,7 @@ pub fn print(text: String) {
 }
 
 pub fn fetch(method: String, url: String, vm: &VirtualMachine) -> PyResult<String> {
-    Runtime::new().unwrap().block_on(async {
+    executor::block_on(async {
       a_fetch(method, url).await.map_err(|e| vm.new_runtime_error(e.to_string()))
     })
 }
