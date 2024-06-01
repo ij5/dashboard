@@ -1,21 +1,25 @@
 use std::{
     collections::HashMap,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use actions::Action;
 use anyhow::Result;
+use boa_engine::{
+    js_string, object::builtins::JsFunction, value::TryFromJs, Context, JsError, JsValue, NativeFunction, Source
+};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::Text,
-    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
+    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
     Frame,
 };
-use rustpython_vm::{self as vm, convert::ToPyObject, pyclass, scope::Scope, AsObject, PyResult};
+use serde::Serialize;
 
 mod actions;
+mod events;
 mod log;
 mod modules;
 mod tui;
@@ -32,99 +36,74 @@ async fn main() -> Result<()> {
 
     tui::restore()?;
 
-    match result {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            let _ = log::println(e.backtrace().to_string().as_str());
-            Err(anyhow::Error::msg(format!("{:?}", e)))
-        },
-    }
+    result
 }
 
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
+    modules: HashMap<String, Module>,
     loaded: Vec<String>,
-    modules: HashMap<String, Scope>,
-    interpreter: vm::Interpreter,
-    log: String,
+    context: Context,
 }
 
-#[allow(dead_code)]
-#[pyclass(module = false, name = "UpdateArgs")]
-#[derive(Default, Debug)]
+#[derive(Serialize)]
 struct UpdateArgs {
-    time: u128
+    time: u128,
+}
+
+#[derive(Debug, TryFromJs)]
+struct Module {
+    init: JsFunction,
+    update: JsFunction,
+}
+
+fn e(x: JsError) -> anyhow::Error {
+    anyhow::Error::msg(x.to_string())
 }
 
 impl App {
     pub fn new(actions: Vec<Action>) -> Self {
-        let mut settings = vm::Settings::default();
-        settings.allow_external_library = true;
-        let interpreter = vm::Interpreter::with_init(Default::default(), |vm| {
-            vm.add_native_modules(rustpython_stdlib::get_module_inits());
-        });
+        let context = Context::default();
         Self {
             exit: false,
             actions,
-            loaded: vec![],
             modules: HashMap::new(),
-            interpreter,
-            log: String::new(),
+            loaded: vec![],
+            context,
         }
     }
 
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let scope: PyResult<Scope> = self.interpreter.enter(|vm| {
-            let scope = vm.new_scope_with_builtins();
-            let print_fn = vm.new_function("print", modules::print);
-            // scope.globals.del_item("print", &vm)?;
-            scope.globals.set_item("print", print_fn.into(), &vm)?;
-            let fetch_fn = vm.new_function("fetch", modules::fetch);
-            scope.globals.set_item("fetch", fetch_fn.into(), &vm)?;
-            Ok(scope)
-        });
-        let scope = self.interpreter.enter(|vm| {
-            match scope {
-                Ok(scope) => Some(scope),
-                Err(e) => {
-                    log::println(e.as_object().repr(vm).unwrap().as_str()).expect("log failed");
-                    None
+        self.context
+            .register_global_callable(
+                js_string!("fetch"),
+                0,
+                NativeFunction::from_async_fn(modules::fetch),
+            )
+            .map_err(e)?;
+        self.context
+            .register_global_callable(
+                "print".into(),
+                0,
+                NativeFunction::from_fn_ptr(modules::print),
+            )
+            .map_err(e)?;
+        for action in self.actions.iter() {
+            let result = match self.context.eval(Source::from_bytes(action.code.as_str())) {
+                Ok(res) => res,
+                Err(err) => {
+                    log::println(&format!("Error: {err}"))?;
+                    continue;
                 }
-            }
-        });
-        let scope = if let Some(scope) = scope {
-            scope
-        } else {
-            return Err(anyhow::Error::msg("no scope"));
-        };
-        for action in self.actions.clone() {
-            let scp = scope.clone();
-            let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
-                let source = action.code.clone();
-                let code_obj = vm
-                    .compile(&source, vm::compiler::Mode::Exec, action.name.clone())
-                    .map_err(|err| vm.new_syntax_error(&err, Some(&source)))?;
-                vm.run_code_obj(code_obj, scp.clone())?;
-                let init_fn = scp.locals.get_item("init", vm)?;
-                init_fn.call((), vm)?;
-                Ok(scp)
-            });
-            match result {
-                Ok(res) => {
-                    self.modules.insert(action.name, res);
-                }
-                Err(e) => {
-                    let err = self.interpreter
-                        .enter(|vm| {
-                            match e.to_pyobject(vm).repr(vm) {
-                                Ok(err) => err.as_str().to_string(),
-                                Err(_) => "ERROR0111".to_owned()
-                            }
-                        });
-                    self.print(&err);
-                }
-            }
+            };
+            let module = Module::try_from_js(&result, &mut self.context).map_err(e)?;
+            module
+                .init
+                .call(&self.context.global_object().into(), &[], &mut self.context)
+                .map_err(e)?;
+            // module.init.call(this, args, context)
+            self.modules.insert(action.name.to_owned(), module);
         }
         let mut time = Instant::now();
         while !self.exit {
@@ -138,29 +117,30 @@ impl App {
         Ok(())
     }
     pub fn exec(&mut self) -> Result<()> {
-        for (name, module) in self.modules.iter() {
-            let block: PyResult<()> = self.interpreter.enter(|vm| {
-                let res = module.locals.get_item("update", vm)?;
-                res.call((), vm)?;
-                Ok(())
-            });
-            match block {
-                Ok(_) => {}
-                Err(e) => {
-                    self.interpreter.enter(|vm| {
-                        let _ = log::println(e.as_object().repr(vm).unwrap().as_str());
-                    });
-                }
-            }
+        for (name, module) in self.modules.iter_mut() {
+            let args = UpdateArgs {
+                time: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis(),
+            };
+            module
+                .update
+                .call(
+                    &self.context.global_object().into(),
+                    &[JsValue::from_json(
+                        &serde_json::to_value(args)?,
+                        &mut self.context,
+                    ).map_err(e)?],
+                    &mut self.context,
+                )
+                .map_err(e)?;
+
             if !self.loaded.contains(&name.to_owned()) {
                 self.loaded.push(name.to_owned());
             }
         }
         Ok(())
-    }
-    fn print(&mut self, text: &str) {
-        self.log.push_str(text);
-        self.log.push_str("\n");
     }
     fn render_frame(&mut self, frame: &mut Frame) {
         frame.render_widget(self, frame.size());
@@ -259,12 +239,9 @@ impl Widget for &mut App {
             .bold()
             .render(status_layout[1], buf);
 
-        Paragraph::new(
-            Text::raw(format!("{}\n{}", include_str!("./logo.txt"), self.log)).light_blue(),
-        )
-        .centered()
-        .block(visual_block)
-        .wrap(Wrap { trim: true, })
-        .render(left_layout[0], buf);
+        Paragraph::new(Text::raw(include_str!("./logo.txt")).light_blue())
+            .centered()
+            .block(visual_block)
+            .render(left_layout[0], buf);
     }
 }
