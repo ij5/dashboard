@@ -9,9 +9,8 @@ pub mod dashboard_sys {
     use crossbeam_channel::Sender;
     use futures::executor;
     use once_cell::sync::OnceCell;
-    use rustpython_vm::{
-        PyObject, PyResult, TryFromBorrowedObject, VirtualMachine
-    };
+    use rustpython_vm::{PyObject, PyResult, TryFromBorrowedObject, VirtualMachine};
+    use serde_json::Value;
 
     use crate::log;
 
@@ -35,26 +34,23 @@ pub mod dashboard_sys {
 
     pub struct FrameData {
         pub action: String,
-        pub filepath: String,
-        pub name: String,
+        pub value: Value,
     }
 
     impl<'a> TryFromBorrowedObject<'a> for FrameData {
         fn try_from_borrowed_object(vm: &VirtualMachine, obj: &'a PyObject) -> PyResult<Self> {
             let action = obj.get_attr("action", vm)?.try_into_value::<String>(vm)?;
-            let filepath = obj.get_attr("filepath", vm)?.try_into_value::<String>(vm)?;
-            let name = obj.get_attr("name", vm)?.try_into_value::<String>(vm)?;
+            let value = obj.get_attr("value", vm)?.try_into_value::<String>(vm)?;
             Ok(FrameData {
                 action,
-                filepath,
-                name,
+                value: serde_json::from_str(&value)
+                    .map_err(|e| vm.new_value_error(e.to_string()))?,
             })
         }
     }
 
     #[pyfunction]
     pub fn send(data: FrameData) {
-        let _ = log::println(&data.action);
         let _ = INSTANCE.get().unwrap().sender.send(data);
     }
 

@@ -57,17 +57,43 @@ pub struct App {
     images: HashMap<String, Img>,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
-    widgets: HashMap<String, WidgetState>,
+    widgets: Vec<Vec<WidgetState>>,
 }
 
-struct WidgetState {
-    widget: String,
-
+#[derive(Clone)]
+enum WidgetState {
+    Text(TextWidget),
+    Image(ImageWidget),
 }
 
+#[derive(Clone)]
+struct TextWidget {
+    text: String,
+    color: Color,
+}
+
+#[derive(Clone)]
+struct ImageWidget {
+    name: String,
+    filepath: String,
+}
+
+#[derive(Clone)]
 struct Img {
     image: Box<dyn StatefulProtocol>,
     area: Rect,
+}
+
+fn check_str(value: Option<serde_json::Value>) -> String {
+    let value = match value {
+        Some(value) => value,
+        None => return String::new(),
+    };
+    let str = match value.as_str() {
+        Some(str) => str.to_string(),
+        None => return String::new(),
+    };
+    str
 }
 
 impl App {
@@ -102,7 +128,7 @@ impl App {
             picker,
             images: HashMap::new(),
             recv,
-            widgets: HashMap::new(),
+            widgets: Vec::new(),
         }
     }
 
@@ -162,9 +188,22 @@ impl App {
                 return Ok(());
             }
         };
+        let value = data.value;
         match data.action.as_str() {
-            "init" => {}
-            // "image" => self.show_image(data.name, data.filepath, )?,
+            "text" => {
+                let text = check_str(value.get("text").cloned());
+                self.widgets.push(vec![WidgetState::Text(TextWidget {
+                    color: Color::White,
+                    text,
+                })]);
+            }
+            "image" => {
+                let name = check_str(value.get("name").cloned());
+                let filepath = check_str(value.get("filepath").cloned());
+                if name == "" || filepath == "" {
+                    return Ok(());
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -174,7 +213,10 @@ impl App {
             let block: PyResult<()> = self.interpreter.enter(|vm| {
                 let module = module.clone();
                 vm.start_thread(move |vm| {
-                    let res = module.locals.get_item("update", vm).expect("no update function");
+                    let res = module
+                        .locals
+                        .get_item("update", vm)
+                        .expect("no update function");
                     let _ = res.call((), vm);
                 });
                 Ok(())
@@ -264,12 +306,6 @@ impl Widget for &mut App {
             .constraints(vec![Constraint::Fill(1), Constraint::Length(4)])
             .split(layout[0]);
 
-        let right_layout =
-            Layout::new(Direction::Vertical, [Constraint::Percentage(100)]).split(layout[1]);
-
-        let right_block = Block::new();
-        right_block.render(right_layout[0], buf);
-
         let visual_block = Block::new()
             .borders(Borders::ALL)
             .title("R2")
@@ -340,5 +376,60 @@ impl Widget for &mut App {
         Paragraph::new(Line::from(status_paragraph))
             .alignment(Alignment::Center)
             .render(status_layout[1], buf);
+
+        let right = layout[1];
+        // let mut constraints = vec![];
+        let mut widget_list: Vec<Vec<Vec<WidgetState>>> = vec![];
+        for wd in self.widgets.iter().cloned() {
+            if widget_list.len() == 0 {
+                widget_list.push(vec![wd]);
+                continue;
+            }
+            if right.width as usize / widget_list.len() < 20 {
+                widget_list.push(vec![]);
+                continue;
+            }
+            match widget_list.last_mut() {
+                Some(wl) => {
+                    wl.push(wd);
+                }
+                None => widget_list.push(vec![wd]),
+            }
+        }
+        let mut col_constraints: Vec<Constraint> = vec![];
+        let mut horizontal_layouts = vec![];
+        for col in widget_list.iter() {
+            let mut row_constraints = vec![];
+            for _row in col.iter() {
+                row_constraints.push(Constraint::Max(20));
+            }
+            horizontal_layouts.push(Layout::new(Direction::Horizontal, row_constraints));
+            col_constraints.push(Constraint::Max(10));
+        }
+        let vertical_layout = Layout::new(Direction::Vertical, col_constraints);
+        let mut y = 0;
+        for v in vertical_layout.split(right).iter().cloned() {
+            let mut x = 0;
+            for h in horizontal_layouts.iter().cloned() {
+                let mut i = 0;
+                let block = Block::bordered();
+                for r in h.split(v).iter().cloned() {
+                    let ws = &widget_list[y][x][i];
+                    match ws {
+                        WidgetState::Text(TextWidget { color, text }) => {
+                            Paragraph::new(text.as_str())
+                                .style(color.clone())
+                                .block(block.clone())
+                                .render(r, buf);
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                x += 1;
+            }
+            y += 1;
+        }
+        // let vertical_layout = Layout::new(Direction::Vertical, constraints).split(right);
     }
 }
