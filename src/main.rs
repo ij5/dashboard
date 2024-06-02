@@ -57,22 +57,22 @@ pub struct App {
     images: HashMap<String, Img>,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
-    widgets: Vec<Vec<WidgetState>>,
+    widgets: HashMap<String, Vec<WidgetState>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum WidgetState {
     Text(TextWidget),
     Image(ImageWidget),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct TextWidget {
     text: String,
     color: Color,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ImageWidget {
     name: String,
     filepath: String,
@@ -128,7 +128,7 @@ impl App {
             picker,
             images: HashMap::new(),
             recv,
-            widgets: Vec::new(),
+            widgets: HashMap::new(),
         }
     }
 
@@ -192,10 +192,22 @@ impl App {
         match data.action.as_str() {
             "text" => {
                 let text = check_str(value.get("text").cloned());
-                self.widgets.push(vec![WidgetState::Text(TextWidget {
+                let state = WidgetState::Text(TextWidget {
                     color: Color::White,
                     text,
-                })]);
+                });
+                let widget = self.widgets.get_mut(data.name.as_str());
+                match widget {
+                    Some(widget) => {
+                        widget.push(state);
+                    }
+                    None => {
+                        self.widgets.insert(data.name, vec![state]);
+                    }
+                }
+            }
+            "clear" => {
+                self.widgets.remove(&data.name);
             }
             "image" => {
                 let name = check_str(value.get("name").cloned());
@@ -380,7 +392,15 @@ impl Widget for &mut App {
         let right = layout[1];
         // let mut constraints = vec![];
         let mut widget_list: Vec<Vec<Vec<WidgetState>>> = vec![];
-        for wd in self.widgets.iter().cloned() {
+        let mut original: Vec<_> = self.widgets.keys().cloned().collect();
+        original.sort();
+        for key in original {
+            let wd = self.widgets.get(key.as_str());
+            let wd = if let Some(w) = wd.cloned() {
+                w
+            } else {
+                continue;
+            };
             if widget_list.len() == 0 {
                 widget_list.push(vec![wd]);
                 continue;
@@ -407,14 +427,19 @@ impl Widget for &mut App {
             col_constraints.push(Constraint::Max(10));
         }
         let vertical_layout = Layout::new(Direction::Vertical, col_constraints);
-        let mut y = 0;
-        for v in vertical_layout.split(right).iter().cloned() {
-            let mut x = 0;
-            for h in horizontal_layouts.iter().cloned() {
-                let mut i = 0;
+        // let mut y = 0;
+        for (y, v) in vertical_layout.split(right).iter().cloned().enumerate() {
+            // let mut x = 0;
+            for (x, h) in horizontal_layouts.iter().cloned().enumerate() {
+                // let mut i = 0;
                 let block = Block::bordered();
-                for r in h.split(v).iter().cloned() {
-                    let ws = &widget_list[y][x][i];
+                for (i, r) in h.split(v).iter().cloned().enumerate() {
+                    let ws = &widget_list[y][i].get(x).cloned();
+                    let _ = log::println(&format!("{}, {}, {}, {:?}", y, x, i, ws));
+                    let ws = match ws {
+                        Some(ws) => ws,
+                        None => break,
+                    };
                     match ws {
                         WidgetState::Text(TextWidget { color, text }) => {
                             Paragraph::new(text.as_str())
@@ -424,11 +449,11 @@ impl Widget for &mut App {
                         }
                         _ => {}
                     }
-                    i += 1;
+                    // i += 1;
                 }
-                x += 1;
+                // x += 1;
             }
-            y += 1;
+            // y += 1;
         }
         // let vertical_layout = Layout::new(Direction::Vertical, constraints).split(right);
     }

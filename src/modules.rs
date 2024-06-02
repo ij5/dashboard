@@ -34,6 +34,7 @@ pub mod dashboard_sys {
 
     pub struct FrameData {
         pub action: String,
+        pub name: String,
         pub value: Value,
     }
 
@@ -41,10 +42,12 @@ pub mod dashboard_sys {
         fn try_from_borrowed_object(vm: &VirtualMachine, obj: &'a PyObject) -> PyResult<Self> {
             let action = obj.get_attr("action", vm)?.try_into_value::<String>(vm)?;
             let value = obj.get_attr("value", vm)?.try_into_value::<String>(vm)?;
+            let name = obj.get_attr("name", vm)?.try_into_value::<String>(vm)?;
             Ok(FrameData {
                 action,
                 value: serde_json::from_str(&value)
                     .map_err(|e| vm.new_value_error(e.to_string()))?,
+                name,
             })
         }
     }
