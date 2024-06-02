@@ -69,13 +69,6 @@ impl App {
     pub fn new(actions: Vec<Action>) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
-        let path = std::env::var("RUSTPYTHONPATH");
-        match path {
-            Ok(path) => settings.path_list.push(path),
-            Err(e) => {
-                log::println(&format!("PathError: {:?}", e)).expect("log");
-            }
-        }
         let (send, recv) = unbounded::<modules::dashboard_sys::FrameData>();
         let sender = send.clone();
         modules::dashboard_sys::initialize(sender);
