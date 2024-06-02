@@ -1,3 +1,5 @@
 /target
 /run.log
-/scripts
+/scripts/*
+!/scripts/dashboard.py
+/Lib

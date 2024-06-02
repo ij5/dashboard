@@ -5,13 +5,13 @@ use std::{
 
 use actions::Action;
 use anyhow::Result;
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
-use modules::build_modules;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::{Line, Text},
-    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
+    text::Line,
+    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
     Frame,
 };
 use ratatui_image::{
@@ -54,9 +54,10 @@ pub struct App {
     modules: HashMap<String, Scope>,
     interpreter: vm::Interpreter,
     current_loading: String,
-    log: String,
     images: HashMap<String, Img>,
     picker: Picker,
+    send: Sender<modules::dashboard_sys::FrameData>,
+    recv: Receiver<modules::dashboard_sys::FrameData>,
 }
 
 struct Img {
@@ -68,8 +69,22 @@ impl App {
     pub fn new(actions: Vec<Action>) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
-        let interpreter = vm::Interpreter::with_init(Default::default(), |vm| {
+        let path = std::env::var("RUSTPYTHONPATH");
+        match path {
+            Ok(path) => settings.path_list.push(path),
+            Err(e) => {
+                log::println(&format!("PathError: {:?}", e)).expect("log");
+            }
+        }
+        let (send, recv) = unbounded::<modules::dashboard_sys::FrameData>();
+        let sender = send.clone();
+        modules::dashboard_sys::initialize(sender);
+        let interpreter = vm::Interpreter::with_init(settings, |vm| {
             vm.add_native_modules(rustpython_stdlib::get_module_inits());
+            vm.add_native_module(
+                "dashboard_sys".to_owned(),
+                Box::new(modules::dashboard_sys::make_module),
+            );
         });
         let mut picker = Picker::new((8, 16));
         picker.protocol_type = ProtocolType::Halfblocks;
@@ -78,30 +93,21 @@ impl App {
             actions,
             modules: HashMap::new(),
             interpreter,
-            log: String::new(),
             failed: vec![],
             current_loading: String::new(),
             picker,
             images: HashMap::new(),
+            send,
+            recv,
         }
     }
 
-    pub fn fetch(&mut self) {}
-
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let scope: PyResult<Scope> = self.interpreter.enter(|vm| build_modules(vm));
-        let scope = self.interpreter.enter(|vm| match scope {
-            Ok(scope) => Some(scope),
-            Err(e) => {
-                log::println(e.as_object().repr(vm).unwrap().as_str()).expect("log failed");
-                None
-            }
-        });
-        let scope = if let Some(scope) = scope {
+        let scope: Scope = self.interpreter.enter(|vm| {
+            let scope = vm.new_scope_with_builtins();
+            vm.insert_sys_path(vm.new_pyobj("scripts")).expect("add path");
             scope
-        } else {
-            return Err(anyhow::Error::msg("no scope"));
-        };
+        });
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -239,18 +245,8 @@ impl Widget for &mut App {
         let right_layout =
             Layout::new(Direction::Vertical, [Constraint::Percentage(100)]).split(layout[1]);
 
-        let right_block = Block::bordered()
-            // .light_blue() # Image stripe bug
-            .title("DASHBOARD")
-            .title_alignment(Alignment::Center);
-        let right_inner = right_block.inner(layout[1]);
+        let right_block = Block::new();
         right_block.render(right_layout[0], buf);
-        self.show_image(
-            "cloudmoon".to_owned(),
-            "cloudmoon.jpg".to_owned(),
-            right_inner,
-        )
-        .unwrap();
 
         let visual_block = Block::new()
             .borders(Borders::ALL)
@@ -303,13 +299,5 @@ impl Widget for &mut App {
         Paragraph::new(Line::from(status_paragraph))
             .alignment(Alignment::Center)
             .render(status_layout[1], buf);
-
-        Paragraph::new(
-            Text::raw(format!("{}\n{}", include_str!("./logo.txt"), self.log)).light_blue(),
-        )
-        .centered()
-        .block(visual_block)
-        .wrap(Wrap { trim: true })
-        .render(left_layout[0], buf);
     }
 }

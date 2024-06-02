@@ -18,6 +18,9 @@ pub fn initialize_scripts() -> Result<Vec<Action>> {
         if !path.ends_with(".py") {
             continue;
         }
+        if path.ends_with("dashboard.py") {
+            continue;
+        }
         let code = fs::read_to_string(path)?;
         let name = Path::new(path)
             .file_stem()
