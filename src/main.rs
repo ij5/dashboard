@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, LineGauge, List, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
     Frame,
 };
 use ratatui_image::{
@@ -56,8 +56,13 @@ pub struct App {
     current_loading: String,
     images: HashMap<String, Img>,
     picker: Picker,
-    send: Sender<modules::dashboard_sys::FrameData>,
     recv: Receiver<modules::dashboard_sys::FrameData>,
+    widgets: HashMap<String, WidgetState>,
+}
+
+struct WidgetState {
+    widget: String,
+
 }
 
 struct Img {
@@ -77,8 +82,7 @@ impl App {
             }
         }
         let (send, recv) = unbounded::<modules::dashboard_sys::FrameData>();
-        let sender = send.clone();
-        modules::dashboard_sys::initialize(sender);
+        modules::dashboard_sys::initialize(send);
         let interpreter = vm::Interpreter::with_init(settings, |vm| {
             vm.add_native_modules(rustpython_stdlib::get_module_inits());
             vm.add_native_module(
@@ -97,8 +101,8 @@ impl App {
             current_loading: String::new(),
             picker,
             images: HashMap::new(),
-            send,
             recv,
+            widgets: HashMap::new(),
         }
     }
 
@@ -147,14 +151,32 @@ impl App {
                 self.exec()?;
                 time = Instant::now();
             }
+            self.consumer()?;
+        }
+        Ok(())
+    }
+    fn consumer(&mut self) -> Result<()> {
+        let data = match self.recv.recv_timeout(Duration::from_millis(100)) {
+            Ok(data) => data,
+            _ => {
+                return Ok(());
+            }
+        };
+        match data.action.as_str() {
+            "init" => {}
+            // "image" => self.show_image(data.name, data.filepath, )?,
+            _ => {}
         }
         Ok(())
     }
     pub fn exec(&mut self) -> Result<()> {
         for (name, module) in self.modules.iter() {
             let block: PyResult<()> = self.interpreter.enter(|vm| {
-                let res = module.locals.get_item("update", vm)?;
-                res.call((), vm)?;
+                let module = module.clone();
+                vm.start_thread(move |vm| {
+                    let res = module.locals.get_item("update", vm).expect("no update function");
+                    let _ = res.call((), vm);
+                });
                 Ok(())
             });
             match block {

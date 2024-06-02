@@ -34,14 +34,20 @@ pub mod dashboard_sys {
     }
 
     pub struct FrameData {
-        action: String,
+        pub action: String,
+        pub filepath: String,
+        pub name: String,
     }
 
     impl<'a> TryFromBorrowedObject<'a> for FrameData {
         fn try_from_borrowed_object(vm: &VirtualMachine, obj: &'a PyObject) -> PyResult<Self> {
             let action = obj.get_attr("action", vm)?.try_into_value::<String>(vm)?;
+            let filepath = obj.get_attr("filepath", vm)?.try_into_value::<String>(vm)?;
+            let name = obj.get_attr("name", vm)?.try_into_value::<String>(vm)?;
             Ok(FrameData {
-                action
+                action,
+                filepath,
+                name,
             })
         }
     }

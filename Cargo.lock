@@ -2071,6 +2071,7 @@ dependencies = [
  "num-complex",
  "num-traits",
  "once_cell",
+ "parking_lot",
  "radium",
  "rand",
  "rustpython-format",
