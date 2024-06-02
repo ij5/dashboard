@@ -9,7 +9,9 @@ pub mod dashboard_sys {
     use crossbeam_channel::Sender;
     use futures::executor;
     use once_cell::sync::OnceCell;
-    use rustpython_vm::{pyclass, PyPayload, PyResult, VirtualMachine};
+    use rustpython_vm::{
+        PyObject, PyResult, TryFromBorrowedObject, VirtualMachine
+    };
 
     use crate::log;
 
@@ -20,30 +22,34 @@ pub mod dashboard_sys {
 
     #[derive(Debug)]
     pub struct Instance {
-        sender: Sender<FrameData>
+        sender: Sender<FrameData>,
     }
 
     pub static INSTANCE: OnceCell<Instance> = OnceCell::new();
 
     pub fn initialize(sender: Sender<FrameData>) {
-        INSTANCE.set(Instance {
-            sender,
-        }).expect("initialize failed");
+        INSTANCE
+            .set(Instance { sender })
+            .expect("initialize failed");
     }
 
-    #[pyattr]
-    #[pyclass(module = "dashboard_sys", name = "_FrameData")]
-    #[derive(Debug, PyPayload)]
     pub struct FrameData {
         action: String,
     }
 
-    #[pyclass]
-    impl FrameData {
-        #[pymethod]
-        fn display_data(&self) {
-            log::println(&format!("{:?}", self)).expect("file print failed");
+    impl<'a> TryFromBorrowedObject<'a> for FrameData {
+        fn try_from_borrowed_object(vm: &VirtualMachine, obj: &'a PyObject) -> PyResult<Self> {
+            let action = obj.get_attr("action", vm)?.try_into_value::<String>(vm)?;
+            Ok(FrameData {
+                action
+            })
         }
+    }
+
+    #[pyfunction]
+    pub fn send(data: FrameData) {
+        let _ = log::println(&data.action);
+        let _ = INSTANCE.get().unwrap().sender.send(data);
     }
 
     #[pyfunction]

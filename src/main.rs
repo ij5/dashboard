@@ -8,10 +8,10 @@ use anyhow::Result;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, LineGauge, List, Padding, Paragraph, Widget},
     Frame,
 };
 use ratatui_image::{
@@ -69,6 +69,13 @@ impl App {
     pub fn new(actions: Vec<Action>) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
+        let path = std::env::var("RUSTPYTHONPATH");
+        match path {
+            Ok(path) => settings.path_list.push(path),
+            Err(e) => {
+                log::println(&format!("PathError: {:?}", e)).expect("log");
+            }
+        }
         let (send, recv) = unbounded::<modules::dashboard_sys::FrameData>();
         let sender = send.clone();
         modules::dashboard_sys::initialize(sender);
@@ -96,16 +103,16 @@ impl App {
     }
 
     pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let scope: Scope = self.interpreter.enter(|vm| {
-            let scope = vm.new_scope_with_builtins();
-            vm.insert_sys_path(vm.new_pyobj("scripts")).expect("add path");
-            scope
+        self.interpreter.enter(|vm| {
+            vm.insert_sys_path(vm.new_pyobj("scripts"))
+                .expect("add path");
         });
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
-            let scp = scope.clone();
+            // let scp = scope.clone();
             let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
+                let scp = vm.new_scope_with_builtins();
                 let source = action.code.clone();
                 let code_obj = vm
                     .compile(&source, vm::compiler::Mode::Exec, action.name.clone())
@@ -245,7 +252,26 @@ impl Widget for &mut App {
             .borders(Borders::ALL)
             .title("R2")
             .title_style(Style::new().bold().green())
-            .yellow(); //.render(left_layout[0], buf);
+            .yellow();
+
+        let visual_inner = visual_block.inner(left_layout[0]);
+        visual_block.render(left_layout[0], buf);
+
+        let visual_layout = Layout::new(
+            Direction::Vertical,
+            [Constraint::Fill(1), Constraint::Fill(1)],
+        )
+        .flex(Flex::Start)
+        .split(visual_inner);
+
+        Paragraph::new("TODO")
+            .light_blue()
+            .alignment(Alignment::Center)
+            .render(visual_layout[0], buf);
+
+        // Paragraph::new("할 일 목록 만들기")
+        //     .light_green()
+        //     .render(visual_layout[1], buf);
 
         let status_layout = Layout::default()
             .direction(Direction::Vertical)

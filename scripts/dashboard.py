@@ -2,9 +2,8 @@ import dashboard_sys
 from dataclasses import dataclass
 
 @dataclass
-class FrameData(dashboard_sys._FrameData):
+class FrameData:
     action: str
-
 
 def fetch(method, url):
     return dashboard_sys.fetch(method, url)
