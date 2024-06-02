@@ -5,7 +5,7 @@ use std::{
 
 use actions::Action;
 use anyhow::Result;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
@@ -57,17 +57,19 @@ pub struct App {
     images: HashMap<String, Img>,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
-    widgets: HashMap<String, Vec<WidgetState>>,
+    widgets: HashMap<String, WidgetState>,
 }
 
 #[derive(Clone, Debug)]
 enum WidgetState {
     Text(TextWidget),
     Image(ImageWidget),
+    Blank,
 }
 
 #[derive(Clone, Debug)]
 struct TextWidget {
+    name: String,
     text: String,
     color: Color,
 }
@@ -173,11 +175,11 @@ impl App {
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
+            self.consumer()?;
             if time.elapsed().as_millis() > 1000 {
                 self.exec()?;
                 time = Instant::now();
             }
-            self.consumer()?;
         }
         Ok(())
     }
@@ -195,16 +197,9 @@ impl App {
                 let state = WidgetState::Text(TextWidget {
                     color: Color::White,
                     text,
+                    name: data.name.to_owned(),
                 });
-                let widget = self.widgets.get_mut(data.name.as_str());
-                match widget {
-                    Some(widget) => {
-                        widget.push(state);
-                    }
-                    None => {
-                        self.widgets.insert(data.name, vec![state]);
-                    }
-                }
+                let _ = self.widgets.insert(data.name.to_owned(), state);
             }
             "clear" => {
                 self.widgets.remove(&data.name);
@@ -213,6 +208,7 @@ impl App {
                 let name = check_str(value.get("name").cloned());
                 let filepath = check_str(value.get("filepath").cloned());
                 if name == "" || filepath == "" {
+                    let _ = log::println("no widget name or file path");
                     return Ok(());
                 }
             }
@@ -229,7 +225,13 @@ impl App {
                         .locals
                         .get_item("update", vm)
                         .expect("no update function");
-                    let _ = res.call((), vm);
+                    let result = res.call((), vm);
+                    match result {
+                        Err(e) => {
+                            let _ = log::println(&format!("{:?}", e.as_object().repr(vm)));
+                        }
+                        _ => {}
+                    }
                 });
                 Ok(())
             });
@@ -265,7 +267,7 @@ impl App {
         frame.render_widget(self, frame.size());
     }
     fn handle_events(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        match poll(Duration::from_millis(1000)) {
+        match poll(Duration::from_millis(100)) {
             Ok(result) => {
                 if !result {
                     return Ok(());
@@ -391,7 +393,7 @@ impl Widget for &mut App {
 
         let right = layout[1];
         // let mut constraints = vec![];
-        let mut widget_list: Vec<Vec<Vec<WidgetState>>> = vec![];
+        let mut widget_list: Vec<Vec<WidgetState>> = vec![];
         let mut original: Vec<_> = self.widgets.keys().cloned().collect();
         original.sort();
         for key in original {
@@ -405,17 +407,22 @@ impl Widget for &mut App {
                 widget_list.push(vec![wd]);
                 continue;
             }
-            if right.width as usize / widget_list.len() < 20 {
-                widget_list.push(vec![]);
+            let last = widget_list.last_mut();
+            let last = match last {
+                Some(last) => {
+                    last
+                }
+                None => {
+                    continue;
+                }
+            };
+            if right.width as usize / (last.len() + 1) < 20 {
+                widget_list.push(vec![wd]);
                 continue;
             }
-            match widget_list.last_mut() {
-                Some(wl) => {
-                    wl.push(wd);
-                }
-                None => widget_list.push(vec![wd]),
-            }
+            last.push(wd);
         }
+        // let _ = log::println(&format!("{:?}", widget_list));
         let mut col_constraints: Vec<Constraint> = vec![];
         let mut horizontal_layouts = vec![];
         for col in widget_list.iter() {
@@ -430,22 +437,26 @@ impl Widget for &mut App {
         // let mut y = 0;
         for (y, v) in vertical_layout.split(right).iter().cloned().enumerate() {
             // let mut x = 0;
-            for (x, h) in horizontal_layouts.iter().cloned().enumerate() {
+            for h in horizontal_layouts.iter().cloned() {
                 // let mut i = 0;
                 let block = Block::bordered();
                 for (i, r) in h.split(v).iter().cloned().enumerate() {
-                    let ws = &widget_list[y][i].get(x).cloned();
-                    let _ = log::println(&format!("{}, {}, {}, {:?}", y, x, i, ws));
+                    // let _ = log::println(&format!("{}, {}, {}, {:?}", y, x, i, widget_list));
+                    let ws = widget_list[y].get(i).cloned();
                     let ws = match ws {
                         Some(ws) => ws,
-                        None => break,
+                        None => WidgetState::Blank,
                     };
                     match ws {
-                        WidgetState::Text(TextWidget { color, text }) => {
+                        WidgetState::Text(TextWidget { color, text, name }) => {
                             Paragraph::new(text.as_str())
                                 .style(color.clone())
-                                .block(block.clone())
+                                .block(block.clone().title(name.as_str()))
+                                .centered()
                                 .render(r, buf);
+                        }
+                        WidgetState::Blank => {
+                            Block::new().render(r, buf);
                         }
                         _ => {}
                     }
