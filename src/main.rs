@@ -54,34 +54,29 @@ pub struct App {
     modules: HashMap<String, Scope>,
     interpreter: vm::Interpreter,
     current_loading: String,
-    images: HashMap<String, Img>,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum WidgetState {
     Text(TextWidget),
     Image(ImageWidget),
     Blank,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct TextWidget {
     name: String,
     text: String,
     color: Color,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct ImageWidget {
     name: String,
     filepath: String,
-}
-
-#[derive(Clone)]
-struct Img {
     image: Box<dyn StatefulProtocol>,
     area: Rect,
 }
@@ -128,7 +123,6 @@ impl App {
             failed: vec![],
             current_loading: String::new(),
             picker,
-            images: HashMap::new(),
             recv,
             widgets: HashMap::new(),
         }
@@ -177,8 +171,8 @@ impl App {
             self.handle_events(terminal)?;
             self.consumer()?;
             if time.elapsed().as_millis() > 1000 {
-                self.exec()?;
                 time = Instant::now();
+                self.exec()?;
             }
         }
         Ok(())
@@ -205,12 +199,12 @@ impl App {
                 self.widgets.remove(&data.name);
             }
             "image" => {
-                let name = check_str(value.get("name").cloned());
                 let filepath = check_str(value.get("filepath").cloned());
-                if name == "" || filepath == "" {
-                    let _ = log::println("no widget name or file path");
+                if filepath == "" {
+                    let _ = log::println("no file path");
                     return Ok(());
                 }
+                self.show_image(data.name, filepath)?;
             }
             _ => {}
         }
@@ -250,19 +244,31 @@ impl App {
         }
         Ok(())
     }
-    fn show_image(&mut self, name: String, path: String, area: Rect) -> Result<()> {
-        let dyn_img = image::io::Reader::open(path)?.decode()?;
+    fn show_image(&mut self, name: String, path: String) -> Result<()> {
+        let dyn_img = image::io::Reader::open(path.to_owned())?.decode()?;
         let image = self.picker.new_resize_protocol(dyn_img);
-        self.images.insert(name, Img { image, area });
+        self.widgets.insert(name.to_owned(), WidgetState::Image(ImageWidget {
+            area: Rect::ZERO,
+            filepath: path,
+            name,
+            image,
+        }));
         Ok(())
     }
-    fn hide_image(&mut self, name: String) {
-        let _ = self.images.remove(name.as_str());
-    }
     fn render_frame(&mut self, frame: &mut Frame) {
-        for (_, img) in self.images.iter_mut() {
+        for (_, img) in self.widgets.iter_mut().filter(|(_, v)| match v.to_owned() {
+            WidgetState::Image(ImageWidget {..}) => {
+                true
+            }
+            _ => false
+        }) {
             let s_image = StatefulImage::new(None).resize(Resize::Fit(Some(FilterType::Nearest)));
-            frame.render_stateful_widget(s_image, img.area, &mut img.image);
+            match img {
+                WidgetState::Image(ImageWidget {area, image, ..}) => {
+                    frame.render_stateful_widget(s_image, area.clone(), image);
+                }
+                _ => {}
+            }
         }
         frame.render_widget(self, frame.size());
     }
@@ -454,6 +460,20 @@ impl Widget for &mut App {
                                 .block(block.clone().title(name.as_str()))
                                 .centered()
                                 .render(r, buf);
+                        }
+                        WidgetState::Image(ImageWidget {name, ..}) => {
+                            let img = match self.widgets.get_mut(name.as_str()) {
+                                Some(img) => {
+                                    img
+                                }
+                                None => continue
+                            };
+                            match img {
+                                WidgetState::Image(ImageWidget {ref mut area, ..}) => {
+                                    *area = r;
+                                }
+                                _ => {}
+                            }
                         }
                         WidgetState::Blank => {
                             Block::new().render(r, buf);

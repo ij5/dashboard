@@ -18,9 +18,8 @@ def print(text):
 def send(action: str, name: str, value: dict):
     dashboard_sys.send(FrameData(action=action, name=name, value=json.dumps(value, ensure_ascii=False)))
 
-def image(name: str, imagename: str, filepath: str):
+def image(name: str, filepath: str):
     send(action="image", name=name, value=dict(
-        name=imagename,
         filepath=filepath,
     ))
 
