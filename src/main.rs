@@ -10,9 +10,9 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
-    style::{Color, Style, Stylize},
-    text::Line,
-    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
+    style::{Color, Modifier, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Block, Borders, LineGauge, List, Padding, Paragraph, Widget, Wrap},
     Frame,
 };
 use ratatui_image::{
@@ -69,7 +69,16 @@ enum WidgetState {
     Text(TextWidget),
     Image(ImageWidget),
     BigText(BigTextWidget),
+    Todo(TodoWidget),
     Blank,
+}
+
+#[derive(Clone)]
+struct TodoWidget {
+    text: String,
+    done: bool,
+    by: String,
+    deadline: u128,
 }
 
 #[derive(Clone)]
@@ -105,6 +114,18 @@ fn check_str(value: Option<serde_json::Value>) -> String {
         None => return String::new(),
     };
     str
+}
+
+fn check_int(value: Option<serde_json::Value>) -> i64 {
+    let value = match value {
+        Some(value) => value,
+        None => return 0,
+    };
+    let num = match value.as_i64() {
+        Some(i) => i,
+        None => return 0,
+    };
+    num
 }
 
 impl App {
@@ -279,6 +300,36 @@ impl App {
                 }
                 self.show_image(data.name, filepath)?;
             }
+            "todo_add" => {
+                let by = check_str(value.get("by").cloned());
+                let text = check_str(value.get("text").cloned());
+                let deadline = check_int(value.get("deadline").cloned());
+                self.visual.insert(data.name.to_owned(), WidgetState::Todo(TodoWidget {
+                    by,
+                    deadline: deadline as u128,
+                    done: false,
+                    // name: data.name.to_owned(),
+                    text,
+                }));
+            }
+            "todo_done" => {
+                let todo = self.visual.get_mut(data.name.as_str());
+                let todo = match todo {
+                    Some(todo) => {
+                        todo
+                    }
+                    None => return Ok(()),
+                };
+                match todo {
+                    WidgetState::Todo(TodoWidget {ref mut done, ..}) => {
+                        *done = true;
+                    }
+                    _ => {}
+                }
+            }
+            "todo_del" => {
+                let _ = self.visual.remove(data.name.as_str());
+            }
             "reload" => {
                 self.init(terminal)?;
             }
@@ -422,6 +473,7 @@ impl Widget for &mut App {
             .borders(Borders::ALL)
             .title("R2")
             .title_style(Style::new().bold().green())
+            .padding(Padding::horizontal(2))
             .yellow();
 
         let visual_inner = visual_block.inner(left_layout[0]);
@@ -429,11 +481,12 @@ impl Widget for &mut App {
 
         let visual_layout = Layout::new(
             Direction::Vertical,
-            [Constraint::Fill(1), Constraint::Fill(1)],
+            [Constraint::Percentage(30), Constraint::Percentage(70)],
         )
         .flex(Flex::Start)
         .split(visual_inner);
 
+        let mut todo_list = Vec::new();
         for (_, view) in self.visual.iter_mut() {
             match view {
                 WidgetState::BigText(BigTextWidget {
@@ -443,8 +496,46 @@ impl Widget for &mut App {
                     *area = visual_layout[0].clone();
                     big_text.clone().render(visual_layout[0], buf);
                 }
+                WidgetState::Todo(TodoWidget {
+                    text,
+                    done,
+                    by,
+                    deadline,
+                    ..
+                }) => {
+                    let mut modifier = Modifier::empty();
+                    let color;
+                    let mark;
+                    if done.clone() {
+                        modifier |= Modifier::CROSSED_OUT;
+                        color = Color::Gray;
+                        mark = "✔️ ";
+                    } else {
+                        color = Color::White;
+                        mark = "🕒 ";
+                    }
+
+                    todo_list.push((
+                        deadline,
+                        Line::from(vec![
+                            Span::styled(mark, Style::new()),
+                            Span::styled(
+                                text.clone(),
+                                Style::default().fg(color).add_modifier(modifier),
+                            ),
+                            Span::styled(format!(" by. {}", by), Style::new().dark_gray()).add_modifier(modifier),
+                        ]),
+                    ));
+                }
                 _ => continue,
             }
+        }
+        if todo_list.len() >= 1 {
+            let _ = log::println(&format!("{:?}", todo_list));
+            todo_list.sort_by(|a, b| a.0.clone().partial_cmp(&b.0.clone()).unwrap());
+            List::new(todo_list.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>())
+                .highlight_symbol(">")
+                .render(visual_layout[1], buf);
         }
 
         // Paragraph::new("TODO")
@@ -587,7 +678,8 @@ impl Widget for &mut App {
                         }
                         WidgetState::Blank => {
                             Block::new().render(r, buf);
-                        } // _ => {}
+                        }
+                        _ => {}
                     }
                     // i += 1;
                 }

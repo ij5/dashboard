@@ -2,8 +2,6 @@ import dashboard_sys
 import json
 from dataclasses import dataclass
 
-pip.main(["install", "discord.py"])
-
 @dataclass
 class FrameData:
     action: str
@@ -32,3 +30,13 @@ def big_text(name: str, text: str, *, color: str = "white", align: str = "center
 
 def reload_scripts():
     send(action="reload", name="reload", value=dict())
+
+def todo_add(id: str, text: str, by: str, deadline: int):
+    send(action="todo_add", name=id, value=dict(text=text, by=by, deadline=deadline))
+
+def todo_done(id: str):
+    send(action="todo_done", name=id, value=dict())
+
+def todo_del(id: str):
+    send(action="todo_del", name=id, value=dict())
+
