@@ -1,6 +1,5 @@
 use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
+    collections::HashMap, str::FromStr, time::{Duration, Instant}
 };
 
 use actions::Action;
@@ -11,7 +10,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
     Frame,
 };
 use ratatui_image::{
@@ -71,8 +70,10 @@ struct TextWidget {
     name: String,
     text: String,
     color: Color,
+    align: Alignment,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 struct ImageWidget {
     name: String,
@@ -188,9 +189,21 @@ impl App {
         match data.action.as_str() {
             "text" => {
                 let text = check_str(value.get("text").cloned());
+                let color = check_str(value.get("color").cloned());
+                let align = check_str(value.get("align").cloned()).to_lowercase();
+                let alignment = if align == "center" {
+                    Alignment::Center
+                } else if align == "left" {
+                    Alignment::Left
+                } else if align == "right" {
+                    Alignment::Right
+                } else {
+                    Alignment::Center
+                };
                 let state = WidgetState::Text(TextWidget {
-                    color: Color::White,
+                    color: Color::from_str(&color).unwrap_or(Color::White),
                     text,
+                    align: alignment,
                     name: data.name.to_owned(),
                 });
                 let _ = self.widgets.insert(data.name.to_owned(), state);
@@ -454,11 +467,12 @@ impl Widget for &mut App {
                         None => WidgetState::Blank,
                     };
                     match ws {
-                        WidgetState::Text(TextWidget { color, text, name }) => {
+                        WidgetState::Text(TextWidget { color, text, name, align }) => {
                             Paragraph::new(text.as_str())
                                 .style(color.clone())
+                                .alignment(align)
+                                .wrap(Wrap {trim: false})
                                 .block(block.clone().title(name.as_str()))
-                                .centered()
                                 .render(r, buf);
                         }
                         WidgetState::Image(ImageWidget {name, ..}) => {
@@ -478,7 +492,7 @@ impl Widget for &mut App {
                         WidgetState::Blank => {
                             Block::new().render(r, buf);
                         }
-                        _ => {}
+                        // _ => {}
                     }
                     // i += 1;
                 }

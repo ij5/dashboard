@@ -2,6 +2,7 @@ import dashboard_sys
 import json
 from dataclasses import dataclass
 from typing import Union
+import requests
 
 @dataclass
 class FrameData:
@@ -23,5 +24,5 @@ def image(name: str, filepath: str):
         filepath=filepath,
     ))
 
-def text(name: str, text: str, *, color: str = "white"):
-    send(action="text", name=name, value=dict(text=text, color=color))
+def text(name: str, text: str, *, color: str = "white", align="center"):
+    send(action="text", name=name, value=dict(text=text, color=color, align=align))
