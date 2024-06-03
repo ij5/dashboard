@@ -7,7 +7,7 @@ use anyhow::Result;
 use crossbeam_channel::{unbounded, Receiver};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
     style::{Color, Style, Stylize},
     text::Line,
     widgets::{Block, Borders, LineGauge, Padding, Paragraph, Widget, Wrap},
@@ -484,7 +484,7 @@ impl Widget for &mut App {
                             };
                             match img {
                                 WidgetState::Image(ImageWidget {ref mut area, ..}) => {
-                                    *area = r;
+                                    *area = r.inner(&Margin::new(1, 1));
                                 }
                                 _ => {}
                             }
