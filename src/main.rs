@@ -531,7 +531,6 @@ impl Widget for &mut App {
             }
         }
         if todo_list.len() >= 1 {
-            let _ = log::println(&format!("{:?}", todo_list));
             todo_list.sort_by(|a, b| a.0.clone().partial_cmp(&b.0.clone()).unwrap());
             List::new(todo_list.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>())
                 .highlight_symbol(">")
