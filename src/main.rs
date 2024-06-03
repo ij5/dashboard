@@ -509,7 +509,7 @@ impl Widget for &mut App {
                     if done.clone() {
                         modifier |= Modifier::CROSSED_OUT;
                         color = Color::Gray;
-                        mark = "✔️ ";
+                        mark = "✅ ";
                     } else {
                         color = Color::White;
                         mark = "🕒 ";
