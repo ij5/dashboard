@@ -532,9 +532,12 @@ impl Widget for &mut App {
         }
         if todo_list.len() >= 1 {
             todo_list.sort_by(|a, b| a.0.clone().partial_cmp(&b.0.clone()).unwrap());
+            let todo_layout = Layout::new(Direction::Vertical, [Constraint::Length(2), Constraint::Fill(1)]).split(visual_layout[1]);
+            Paragraph::new("📋 할 일 목록")
+                .render(todo_layout[0], buf);
             List::new(todo_list.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>())
                 .highlight_symbol(">")
-                .render(visual_layout[1], buf);
+                .render(todo_layout[1], buf);
         }
 
         // Paragraph::new("TODO")
