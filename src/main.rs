@@ -62,6 +62,7 @@ pub struct App {
     send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
     visual: HashMap<String, WidgetState>,
+    size: (u16, u16),
 }
 
 #[derive(Clone)]
@@ -141,6 +142,7 @@ impl App {
             send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
+            size: (20, 10),
         }
     }
 
@@ -385,6 +387,14 @@ impl App {
                     value: serde_json::Value::Null,
                 });
             }
+            KeyCode::Char('='|'+') => {
+                self.size.0 += 2;
+                self.size.1 += 1;
+            }
+            KeyCode::Char('-') => {
+                self.size.0 -= 2;
+                self.size.1 -= 1;
+            }
             _ => {}
         }
     }
@@ -512,7 +522,7 @@ impl Widget for &mut App {
                     continue;
                 }
             };
-            if right.width as usize / (last.len() + 1) < 20 {
+            if right.width as usize / (last.len() + 1) < self.size.0 as usize {
                 widget_list.push(vec![wd]);
                 continue;
             }
@@ -524,10 +534,10 @@ impl Widget for &mut App {
         for col in widget_list.iter() {
             let mut row_constraints = vec![];
             for _row in col.iter() {
-                row_constraints.push(Constraint::Max(20));
+                row_constraints.push(Constraint::Max(self.size.0));
             }
             horizontal_layouts.push(Layout::new(Direction::Horizontal, row_constraints));
-            col_constraints.push(Constraint::Max(10));
+            col_constraints.push(Constraint::Max(self.size.1));
         }
         let vertical_layout = Layout::new(Direction::Vertical, col_constraints);
         // let mut y = 0;
