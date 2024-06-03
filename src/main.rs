@@ -6,7 +6,7 @@ use std::{
 
 use actions::Action;
 use anyhow::Result;
-use crossbeam_channel::{unbounded, Receiver};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
@@ -59,6 +59,7 @@ pub struct App {
     current_loading: String,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
+    send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
     visual: HashMap<String, WidgetState>,
 }
@@ -118,7 +119,7 @@ impl App {
             }
         }
         let (send, recv) = unbounded::<modules::dashboard_sys::FrameData>();
-        modules::dashboard_sys::initialize(send);
+        modules::dashboard_sys::initialize(send.clone());
         let interpreter = vm::Interpreter::with_init(settings, |vm| {
             vm.add_native_modules(rustpython_stdlib::get_module_inits());
             vm.add_native_module(
@@ -137,12 +138,14 @@ impl App {
             current_loading: String::new(),
             picker,
             recv,
+            send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
         }
     }
 
     pub fn init(&mut self, terminal: &mut tui::TUI) -> Result<()> {
+        self.widgets.clear();
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -373,6 +376,13 @@ impl App {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Esc => self.exit(),
+            KeyCode::Char('r') => {
+                let _ = self.send.send(modules::dashboard_sys::FrameData {
+                    action: "reload".to_owned(),
+                    name: "reload".to_owned(),
+                    value: serde_json::Value::Null,
+                });
+            }
             _ => {}
         }
     }
