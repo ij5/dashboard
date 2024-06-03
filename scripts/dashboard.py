@@ -26,3 +26,9 @@ def image(name: str, filepath: str):
 
 def text(name: str, text: str, *, color: str = "white", align="center"):
     send(action="text", name=name, value=dict(text=text, color=color, align=align))
+
+def big_text(name: str, text: str, *, color: str = "white", align: str = "center"):
+    send(action="big", name=name, value=dict(text=text, color=color, align=align))
+
+def reload_scripts():
+    send(action="reload", name="reload", value=dict())

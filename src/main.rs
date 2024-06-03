@@ -1,5 +1,7 @@
 use std::{
-    collections::HashMap, str::FromStr, time::{Duration, Instant}
+    collections::HashMap,
+    str::FromStr,
+    time::{Duration, Instant},
 };
 
 use actions::Action;
@@ -19,6 +21,7 @@ use ratatui_image::{
     FilterType, Resize, StatefulImage,
 };
 use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
+use tui_big_text::{BigText, PixelSize};
 
 mod actions;
 mod log;
@@ -46,6 +49,7 @@ async fn main() -> Result<()> {
     }
 }
 
+
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
@@ -56,12 +60,14 @@ pub struct App {
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
+    visual: HashMap<String, WidgetState>,
 }
 
 #[derive(Clone)]
 enum WidgetState {
     Text(TextWidget),
     Image(ImageWidget),
+    BigText(BigTextWidget),
     Blank,
 }
 
@@ -71,6 +77,12 @@ struct TextWidget {
     text: String,
     color: Color,
     align: Alignment,
+}
+
+#[derive(Clone)]
+struct BigTextWidget {
+    big_text: BigText<'static>,
+    area: Rect,
 }
 
 #[allow(dead_code)]
@@ -126,14 +138,11 @@ impl App {
             picker,
             recv,
             widgets: HashMap::new(),
+            visual: HashMap::new(),
         }
     }
 
-    pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        self.interpreter.enter(|vm| {
-            vm.insert_sys_path(vm.new_pyobj("scripts"))
-                .expect("add path");
-        });
+    pub fn init(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -166,11 +175,21 @@ impl App {
             }
         }
         self.current_loading.clear();
+        Ok(())
+    }
+
+    pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
+        self.interpreter.enter(|vm| {
+            vm.insert_sys_path(vm.new_pyobj("scripts"))
+                .expect("add path");
+        });
+        self.init(terminal)?;
+        
         let mut time = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events(terminal)?;
-            self.consumer()?;
+            self.consumer(terminal)?;
             if time.elapsed().as_millis() > 1000 {
                 time = Instant::now();
                 self.exec()?;
@@ -178,7 +197,7 @@ impl App {
         }
         Ok(())
     }
-    fn consumer(&mut self) -> Result<()> {
+    fn consumer(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         let data = match self.recv.recv_timeout(Duration::from_millis(100)) {
             Ok(data) => data,
             _ => {
@@ -211,6 +230,40 @@ impl App {
             "clear" => {
                 self.widgets.remove(&data.name);
             }
+            "big" => {
+                let text = check_str(value.get("text").cloned());
+                let color = check_str(value.get("color").cloned());
+                let align = check_str(value.get("align").cloned()).to_lowercase();
+                let alignment = if align == "center" {
+                    Alignment::Center
+                } else if align == "left" {
+                    Alignment::Left
+                } else if align == "right" {
+                    Alignment::Right
+                } else {
+                    Alignment::Center
+                };
+                let big_text = BigText::builder()
+                    .pixel_size(PixelSize::Quadrant)
+                    .style(Style::new().fg(Color::from_str(&color).unwrap_or(Color::White)))
+                    .lines(
+                        text.split('\n')
+                            .map(|s| s.to_string().into())
+                            .collect::<Vec<_>>(),
+                    )
+                    .alignment(alignment)
+                    .build();
+                let big_text = match big_text {
+                    Ok(bt) => bt,
+                    Err(err) => {
+                        let _ = log::println(err.to_string().as_str());
+                        return Ok(());
+                    }
+                };
+                let area = Rect::ZERO;
+                self.visual
+                    .insert(data.name, WidgetState::BigText(BigTextWidget { big_text, area }));
+            }
             "image" => {
                 let filepath = check_str(value.get("filepath").cloned());
                 if filepath == "" {
@@ -218,6 +271,9 @@ impl App {
                     return Ok(());
                 }
                 self.show_image(data.name, filepath)?;
+            }
+            "reload" => {
+                self.init(terminal)?;
             }
             _ => {}
         }
@@ -260,24 +316,25 @@ impl App {
     fn show_image(&mut self, name: String, path: String) -> Result<()> {
         let dyn_img = image::io::Reader::open(path.to_owned())?.decode()?;
         let image = self.picker.new_resize_protocol(dyn_img);
-        self.widgets.insert(name.to_owned(), WidgetState::Image(ImageWidget {
-            area: Rect::ZERO,
-            filepath: path,
-            name,
-            image,
-        }));
+        self.widgets.insert(
+            name.to_owned(),
+            WidgetState::Image(ImageWidget {
+                area: Rect::ZERO,
+                filepath: path,
+                name,
+                image,
+            }),
+        );
         Ok(())
     }
     fn render_frame(&mut self, frame: &mut Frame) {
         for (_, img) in self.widgets.iter_mut().filter(|(_, v)| match v.to_owned() {
-            WidgetState::Image(ImageWidget {..}) => {
-                true
-            }
-            _ => false
+            WidgetState::Image(ImageWidget { .. }) => true,
+            _ => false,
         }) {
             let s_image = StatefulImage::new(None).resize(Resize::Fit(Some(FilterType::Nearest)));
             match img {
-                WidgetState::Image(ImageWidget {area, image, ..}) => {
+                WidgetState::Image(ImageWidget { area, image, .. }) => {
                     frame.render_stateful_widget(s_image, area.clone(), image);
                 }
                 _ => {}
@@ -355,10 +412,20 @@ impl Widget for &mut App {
         .flex(Flex::Start)
         .split(visual_inner);
 
-        Paragraph::new("TODO")
-            .light_blue()
-            .alignment(Alignment::Center)
-            .render(visual_layout[0], buf);
+        for (_, view) in self.visual.iter_mut() {
+            match view {
+                WidgetState::BigText(BigTextWidget {ref mut area, big_text}) => {
+                    *area = visual_layout[0].clone();
+                    big_text.clone().render(visual_layout[0], buf);
+                },
+                _ => continue
+            }
+        }
+
+        // Paragraph::new("TODO")
+        //     .light_blue()
+        //     .alignment(Alignment::Center)
+        //     .render(visual_layout[0], buf);
 
         // Paragraph::new("할 일 목록 만들기")
         //     .light_green()
@@ -428,9 +495,7 @@ impl Widget for &mut App {
             }
             let last = widget_list.last_mut();
             let last = match last {
-                Some(last) => {
-                    last
-                }
+                Some(last) => last,
                 None => {
                     continue;
                 }
@@ -467,27 +532,33 @@ impl Widget for &mut App {
                         None => WidgetState::Blank,
                     };
                     match ws {
-                        WidgetState::Text(TextWidget { color, text, name, align }) => {
+                        WidgetState::Text(TextWidget {
+                            color,
+                            text,
+                            name,
+                            align,
+                        }) => {
                             Paragraph::new(text.as_str())
                                 .style(color.clone())
                                 .alignment(align)
-                                .wrap(Wrap {trim: false})
+                                .wrap(Wrap { trim: false })
                                 .block(block.clone().title(name.as_str()))
                                 .render(r, buf);
                         }
-                        WidgetState::Image(ImageWidget {name, ..}) => {
+                        WidgetState::Image(ImageWidget { name, .. }) => {
                             let img = match self.widgets.get_mut(name.as_str()) {
-                                Some(img) => {
-                                    img
-                                }
-                                None => continue
+                                Some(img) => img,
+                                None => continue,
                             };
                             match img {
-                                WidgetState::Image(ImageWidget {ref mut area, ..}) => {
+                                WidgetState::Image(ImageWidget { ref mut area, .. }) => {
                                     *area = r.inner(&Margin::new(1, 1));
                                 }
                                 _ => {}
                             }
+                        }
+                        WidgetState::BigText(BigTextWidget {big_text, area}) => {
+                            big_text.render(area, buf)
                         }
                         WidgetState::Blank => {
                             Block::new().render(r, buf);

@@ -66,6 +66,11 @@ pub mod dashboard_sys {
         })
     }
 
+    #[pyfunction]
+    pub fn reload_scripts() {
+        send(FrameData { action: "reload".to_string(), name: "reload".to_owned(), value: Value::Null });
+    }
+
     async fn a_fetch(method: String, url: String) -> Result<String> {
         let response;
         if method == "GET" {
