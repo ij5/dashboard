@@ -49,7 +49,6 @@ async fn main() -> Result<()> {
     }
 }
 
-
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
@@ -191,7 +190,6 @@ impl App {
                 .expect("add path");
         });
         self.init(terminal)?;
-        
         let mut time = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -268,8 +266,10 @@ impl App {
                     }
                 };
                 let area = Rect::ZERO;
-                self.visual
-                    .insert(data.name, WidgetState::BigText(BigTextWidget { big_text, area }));
+                self.visual.insert(
+                    data.name,
+                    WidgetState::BigText(BigTextWidget { big_text, area }),
+                );
             }
             "image" => {
                 let filepath = check_str(value.get("filepath").cloned());
@@ -387,7 +387,7 @@ impl App {
                     value: serde_json::Value::Null,
                 });
             }
-            KeyCode::Char('='|'+') => {
+            KeyCode::Char('=' | '+') => {
                 self.size.0 += 2;
                 self.size.1 += 1;
             }
@@ -436,11 +436,14 @@ impl Widget for &mut App {
 
         for (_, view) in self.visual.iter_mut() {
             match view {
-                WidgetState::BigText(BigTextWidget {ref mut area, big_text}) => {
+                WidgetState::BigText(BigTextWidget {
+                    ref mut area,
+                    big_text,
+                }) => {
                     *area = visual_layout[0].clone();
                     big_text.clone().render(visual_layout[0], buf);
-                },
-                _ => continue
+                }
+                _ => continue,
             }
         }
 
@@ -579,13 +582,12 @@ impl Widget for &mut App {
                                 _ => {}
                             }
                         }
-                        WidgetState::BigText(BigTextWidget {big_text, area}) => {
+                        WidgetState::BigText(BigTextWidget { big_text, area }) => {
                             big_text.render(area, buf)
                         }
                         WidgetState::Blank => {
                             Block::new().render(r, buf);
-                        }
-                        // _ => {}
+                        } // _ => {}
                     }
                     // i += 1;
                 }

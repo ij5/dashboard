@@ -1,8 +1,8 @@
 import dashboard_sys
 import json
 from dataclasses import dataclass
-from typing import Union
-import requests
+
+pip.main(["install", "discord.py"])
 
 @dataclass
 class FrameData:
