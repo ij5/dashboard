@@ -177,6 +177,34 @@ impl App {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
             // let scp = scope.clone();
+            if action.name.starts_with("task_") {
+                let thread_code = action.code.clone();
+                let thread_name = action.name.clone();
+                self.interpreter.enter(|vm| {
+                    let code = thread_code.clone();
+                    vm.start_thread(move |vm| {
+                        let scope = vm.new_scope_with_builtins();
+                        let result = vm.run_code_string(scope, &code, thread_name);
+                        match result {
+                            Err(e) => {
+                                let _ = log::println(&format!(
+                                    "Thread: {}",
+                                    e.clone().to_pyobject(vm).repr(vm).unwrap().as_str(),
+                                ));
+                                let traceback = e.traceback().unwrap();
+                                for tb in traceback.iter() {
+                                    let _ = log::println(&format!(
+                                        "Traceback: {:?}",
+                                        tb.frame.code,
+                                    ));
+                                }
+                            }
+                            _ => {}
+                        }
+                    });
+                });
+                continue;
+            }
             let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
                 let scp = vm.new_scope_with_builtins();
                 let source = action.code.clone();
@@ -576,15 +604,20 @@ impl Widget for &mut App {
             .padding(Padding::horizontal(1))
             .green();
 
+        let actions_len = self
+            .actions
+            .iter()
+            .filter(|v| !v.name.starts_with("task_"))
+            .collect::<Vec<_>>()
+            .len();
+
         let status_text = format!(
             "{} 로딩 중({}/{})...",
             self.current_loading,
             self.modules.len() + self.failed.len(),
-            self.actions.len()
+            actions_len,
         );
-        let (status_text, load_ratio) = if self.modules.len() + self.failed.len()
-            == self.actions.len()
-        {
+        let (status_text, load_ratio) = if self.modules.len() + self.failed.len() == actions_len {
             ("로드 완료!", 1.0)
         } else {
             (
