@@ -13,7 +13,7 @@ def fetch(method, url):
     return dashboard_sys.fetch(method, url)
 
 def print(text):
-    dashboard_sys.print(text)
+    dashboard_sys.print(str(text))
 
 def send(action: str, name: str, value: dict):
     dashboard_sys.send(FrameData(action=action, name=name, value=json.dumps(value, ensure_ascii=False)))
