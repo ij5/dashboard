@@ -1,6 +1,7 @@
 import dashboard_sys
 import json
 from dataclasses import dataclass
+import sys
 
 @dataclass
 class FrameData:
@@ -39,4 +40,13 @@ def todo_done(index: int):
 
 def todo_del(index: int):
     send(action="todo_del", name="", value=dict(index=index))
+
+
+
+class FileOut(object):
+    def write(self, text):
+        global print
+        print(text)
+
+sys.stdout = FileOut()
 
