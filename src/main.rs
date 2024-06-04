@@ -215,10 +215,10 @@ impl App {
                     handle
                 });
                 continue;
-            }
-            if second {
+            } else if second {
                 continue;
             }
+
             let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
                 let scp = vm.new_scope_with_builtins();
                 let source = action.code.clone();
