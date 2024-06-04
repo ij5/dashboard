@@ -1,7 +1,5 @@
 use std::{
-    collections::HashMap,
-    str::FromStr,
-    time::{Duration, Instant},
+    collections::HashMap, str::FromStr, time::{Duration, Instant}
 };
 
 use actions::Action;
@@ -182,8 +180,8 @@ impl App {
                 let thread_name = action.name.clone();
                 self.interpreter.enter(|vm| {
                     let code = thread_code.clone();
-                    vm.start_thread(move |vm| {
-                        let scope = vm.new_scope_with_builtins();
+                    let scope = vm.new_scope_with_builtins();
+                    let handle = vm.start_thread(move |vm| {
                         let code_obj = vm.compile(&code, vm::compiler::Mode::Exec, thread_name);
                         let code_obj = match code_obj {
                             Ok(code) => code,
@@ -209,6 +207,7 @@ impl App {
                             }
                         }
                     });
+                    handle
                 });
                 continue;
             }
@@ -216,9 +215,18 @@ impl App {
                 let scp = vm.new_scope_with_builtins();
                 let source = action.code.clone();
                 let code_obj = vm
-                    .compile(&source, vm::compiler::Mode::Exec, action.name.clone())
+                    .compile(&source, vm::compiler::Mode::Exec, action.name.clone() + ".py")
                     .map_err(|err| vm.new_syntax_error(&err, Some(&source)))?;
-                vm.run_code_obj(code_obj, scp.clone())?;
+                match vm.run_code_obj(code_obj, scp.clone()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        let _ = log::println(&format!(
+                            "File: {:?}",
+                            e,
+                        ));
+                        return Ok(scp);
+                    }
+                }
                 let init_fn = scp.locals.get_item("init", vm)?;
                 init_fn.call((), vm)?;
                 Ok(scp)
