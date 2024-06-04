@@ -3,3 +3,4 @@
 /scripts/*
 !/scripts/dashboard.py
 /Lib
+/data.json

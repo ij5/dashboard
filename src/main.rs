@@ -21,6 +21,7 @@ use ratatui_image::{
     FilterType, Resize, StatefulImage,
 };
 use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
+use serde::{Deserialize, Serialize};
 use tui_big_text::{BigText, PixelSize};
 
 mod actions;
@@ -49,6 +50,19 @@ async fn main() -> Result<()> {
     }
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        match serde_json::to_string(&self.state) {
+            Ok(json) => {
+                let _ = std::fs::write("data.json", json);
+            }
+            Err(e) => {
+                println!("{:?}", e);
+            }
+        }
+    }
+}
+
 pub struct App {
     exit: bool,
     actions: Vec<Action>,
@@ -61,8 +75,14 @@ pub struct App {
     send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
     visual: HashMap<String, WidgetState>,
+    state: AppState,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct AppState {
+    w: u16,
+    h: u16,
     todo: Vec<TodoWidget>,
-    size: (u16, u16),
 }
 
 #[derive(Clone)]
@@ -73,7 +93,7 @@ enum WidgetState {
     Blank,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct TodoWidget {
     text: String,
     done: bool,
@@ -150,6 +170,12 @@ impl App {
         });
         let mut picker = Picker::new((8, 16));
         picker.protocol_type = ProtocolType::Halfblocks;
+        let raw = std::fs::read_to_string("data.json").unwrap_or("{}".to_owned());
+        let state = serde_json::from_str::<AppState>(&raw).unwrap_or(AppState {
+            w: 20,
+            h: 10,
+            todo: vec![],
+        });
         Self {
             exit: false,
             actions,
@@ -162,8 +188,7 @@ impl App {
             send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
-            todo: Vec::new(),
-            size: (20, 10),
+            state,
         }
     }
 
@@ -175,7 +200,6 @@ impl App {
         self.modules.clear();
         self.widgets.clear();
         self.failed.clear();
-        self.todo.clear();
         self.actions = actions::initialize_scripts()?;
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
@@ -363,7 +387,7 @@ impl App {
                 let by = check_str(value.get("by").cloned());
                 let text = check_str(value.get("text").cloned());
                 let deadline = check_int(value.get("deadline").cloned());
-                self.todo.insert(
+                self.state.todo.insert(
                     0,
                     TodoWidget {
                         by,
@@ -380,7 +404,7 @@ impl App {
                 if index < 1 {
                     return Ok(());
                 }
-                let todo = self.todo.get_mut(index as usize - 1);
+                let todo = self.state.todo.get_mut(index as usize - 1);
                 let todo = match todo {
                     Some(todo) => todo,
                     None => return Ok(()),
@@ -391,7 +415,7 @@ impl App {
             "todo_del" => {
                 let index = check_int(value.get("index").cloned());
                 if index >= 1 {
-                    let _ = self.todo.remove(index as usize - 1);
+                    let _ = self.state.todo.remove(index as usize - 1);
                 }
                 self.sort_todo();
             }
@@ -406,8 +430,8 @@ impl App {
         Ok(())
     }
     pub fn sort_todo(&mut self) {
-        self.todo.sort_by(|a, b| a.deadline.cmp(&b.deadline));
-        self.todo.sort_by(|a, b| a.done.cmp(&b.done));
+        self.state.todo.sort_by(|a, b| a.deadline.cmp(&b.deadline));
+        self.state.todo.sort_by(|a, b| a.done.cmp(&b.done));
     }
     pub fn exec(&mut self) -> Result<()> {
         for (name, module) in self.modules.iter() {
@@ -511,12 +535,12 @@ impl App {
                 });
             }
             KeyCode::Char('=' | '+') => {
-                self.size.0 += 2;
-                self.size.1 += 1;
+                self.state.w += 2;
+                self.state.h += 1;
             }
             KeyCode::Char('-') => {
-                self.size.0 -= 2;
-                self.size.1 -= 1;
+                self.state.w -= 2;
+                self.state.h -= 1;
             }
             _ => {}
         }
@@ -571,7 +595,7 @@ impl Widget for &mut App {
             }
         }
         let mut todo_list = Vec::new();
-        for (i, todo) in self.todo.iter().enumerate() {
+        for (i, todo) in self.state.todo.iter().enumerate() {
             let mut modifier = Modifier::empty();
             let color;
             let mark;
@@ -698,7 +722,7 @@ impl Widget for &mut App {
                     continue;
                 }
             };
-            if right.width as usize / (last.len() + 1) < self.size.0 as usize {
+            if right.width as usize / (last.len() + 1) < self.state.w as usize {
                 widget_list.push(vec![wd]);
                 continue;
             }
@@ -710,10 +734,10 @@ impl Widget for &mut App {
         for col in widget_list.iter() {
             let mut row_constraints = vec![];
             for _row in col.iter() {
-                row_constraints.push(Constraint::Max(self.size.0));
+                row_constraints.push(Constraint::Max(self.state.w));
             }
             horizontal_layouts.push(Layout::new(Direction::Horizontal, row_constraints));
-            col_constraints.push(Constraint::Max(self.size.1));
+            col_constraints.push(Constraint::Max(self.state.h));
         }
         let vertical_layout = Layout::new(Direction::Vertical, col_constraints);
         // let mut y = 0;
