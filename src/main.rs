@@ -171,6 +171,7 @@ impl App {
         self.widgets.clear();
         self.modules.clear();
         self.failed.clear();
+        self.todo.clear();
         self.actions = actions::initialize_scripts()?;
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
