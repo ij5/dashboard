@@ -6,7 +6,7 @@ use std::{
 
 use actions::Action;
 use anyhow::Result;
-use crossbeam_channel::{unbounded, Receiver};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
@@ -58,7 +58,7 @@ pub struct App {
     current_loading: String,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
-    // send: Sender<modules::dashboard_sys::FrameData>,
+    send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
     visual: HashMap<String, WidgetState>,
     todo: Vec<TodoWidget>,
@@ -159,7 +159,7 @@ impl App {
             current_loading: String::new(),
             picker,
             recv,
-            // send,
+            send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
             todo: Vec::new(),
@@ -168,8 +168,12 @@ impl App {
     }
 
     pub fn init(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        self.widgets.clear();
+        let mut second = false;
+        if self.modules.len() >= 1 {
+            second = true;
+        }
         self.modules.clear();
+        self.widgets.clear();
         self.failed.clear();
         self.todo.clear();
         self.actions = actions::initialize_scripts()?;
@@ -177,7 +181,7 @@ impl App {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
             // let scp = scope.clone();
-            if action.name.starts_with("task_") {
+            if action.name.starts_with("task_") && !second {
                 let thread_code = action.code.clone();
                 let thread_name = action.name.clone();
                 self.interpreter.enter(|vm| {
@@ -493,11 +497,11 @@ impl App {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Esc => self.exit(),
             KeyCode::Char('r') => {
-                // let _ = self.send.send(modules::dashboard_sys::FrameData {
-                //     action: "reload".to_owned(),
-                //     name: "reload".to_owned(),
-                //     value: serde_json::Value::Null,
-                // });
+                let _ = self.send.send(modules::dashboard_sys::FrameData {
+                    action: "reload".to_owned(),
+                    name: "reload".to_owned(),
+                    value: serde_json::Value::Null,
+                });
             }
             KeyCode::Char('=' | '+') => {
                 self.size.0 += 2;
