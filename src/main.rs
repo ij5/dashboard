@@ -218,8 +218,6 @@ impl App {
                     handle
                 });
                 continue;
-            } else if second {
-                continue;
             }
 
             let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
