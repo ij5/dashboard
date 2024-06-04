@@ -401,7 +401,7 @@ impl App {
             }
             "todo_done" => {
                 let index = check_int(value.get("index").cloned());
-                if index < 1 {
+                if index < 1 || index as usize > self.state.todo.len() {
                     return Ok(());
                 }
                 let todo = self.state.todo.get_mut(index as usize - 1);
@@ -415,7 +415,9 @@ impl App {
             "todo_del" => {
                 let index = check_int(value.get("index").cloned());
                 if index >= 1 {
-                    let _ = self.state.todo.remove(index as usize - 1);
+                    if index as usize <= self.state.todo.len() {
+                        let _ = self.state.todo.remove(index as usize - 1);
+                    }
                 }
                 self.sort_todo();
             }
