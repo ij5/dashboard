@@ -181,7 +181,10 @@ impl App {
             self.current_loading = action.name.to_owned();
             terminal.draw(|frame| self.render_frame(frame))?;
             // let scp = scope.clone();
-            if action.name.starts_with("task_") && !second {
+            if action.name.starts_with("task_") {
+                if second {
+                    continue;
+                }
                 let thread_code = action.code.clone();
                 let thread_name = action.name.clone();
                 self.interpreter.enter(|vm| {
