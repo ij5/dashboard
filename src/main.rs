@@ -216,6 +216,9 @@ impl App {
                 });
                 continue;
             }
+            if second {
+                continue;
+            }
             let result: vm::PyResult<vm::scope::Scope> = self.interpreter.enter(|vm| {
                 let scp = vm.new_scope_with_builtins();
                 let source = action.code.clone();
@@ -229,7 +232,10 @@ impl App {
                 match vm.run_code_obj(code_obj, scp.clone()) {
                     Ok(_) => {}
                     Err(e) => {
-                        let _ = log::println(&format!("File: {:?}", e,));
+                        let _ = log::println(&format!(
+                            "File: {:?}",
+                            e.to_pyobject(vm).repr(vm).unwrap().as_str()
+                        ));
                         return Ok(scp);
                     }
                 }
