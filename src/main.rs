@@ -1,5 +1,7 @@
 use std::{
-    collections::HashMap, str::FromStr, time::{Duration, Instant}
+    collections::HashMap,
+    str::FromStr,
+    time::{Duration, Instant},
 };
 
 use actions::Action;
@@ -186,7 +188,8 @@ impl App {
                         let code_obj = match code_obj {
                             Ok(code) => code,
                             Err(e) => {
-                                let _ = log::println(&format!("ThreadInit: {}", e.error.to_string()));
+                                let _ =
+                                    log::println(&format!("ThreadInit: {}", e.error.to_string()));
                                 return;
                             }
                         };
@@ -199,10 +202,8 @@ impl App {
                                 ));
                                 let traceback = e.traceback().unwrap();
                                 for tb in traceback.iter() {
-                                    let _ = log::println(&format!(
-                                        "Traceback: {:?}",
-                                        tb.frame.code,
-                                    ));
+                                    let _ =
+                                        log::println(&format!("Traceback: {:?}", tb.frame.code,));
                                 }
                             }
                         }
@@ -215,15 +216,16 @@ impl App {
                 let scp = vm.new_scope_with_builtins();
                 let source = action.code.clone();
                 let code_obj = vm
-                    .compile(&source, vm::compiler::Mode::Exec, action.name.clone() + ".py")
+                    .compile(
+                        &source,
+                        vm::compiler::Mode::Exec,
+                        action.name.clone() + ".py",
+                    )
                     .map_err(|err| vm.new_syntax_error(&err, Some(&source)))?;
                 match vm.run_code_obj(code_obj, scp.clone()) {
                     Ok(_) => {}
                     Err(e) => {
-                        let _ = log::println(&format!(
-                            "File: {:?}",
-                            e,
-                        ));
+                        let _ = log::println(&format!("File: {:?}", e,));
                         return Ok(scp);
                     }
                 }
@@ -270,7 +272,7 @@ impl App {
         Ok(())
     }
     fn consumer(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let data = match self.recv.recv_timeout(Duration::from_millis(100)) {
+        let data = match self.recv.try_recv() {
             Ok(data) => data,
             _ => {
                 return Ok(());
@@ -724,7 +726,12 @@ impl Widget for &mut App {
                                 .style(color.clone())
                                 .alignment(align)
                                 .wrap(Wrap { trim: false })
-                                .block(block.clone().title(name.as_str()))
+                                .block(
+                                    block
+                                        .clone()
+                                        .title(name.as_str())
+                                        .padding(Padding::horizontal(1)),
+                                )
                                 .render(r, buf);
                         }
                         WidgetState::Image(ImageWidget { name, .. }) => {
