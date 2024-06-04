@@ -61,6 +61,7 @@ pub struct App {
     send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
     visual: HashMap<String, WidgetState>,
+    todo: Vec<TodoWidget>,
     size: (u16, u16),
 }
 
@@ -69,7 +70,6 @@ enum WidgetState {
     Text(TextWidget),
     Image(ImageWidget),
     BigText(BigTextWidget),
-    Todo(TodoWidget),
     Blank,
 }
 
@@ -162,6 +162,7 @@ impl App {
             send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
+            todo: Vec::new(),
             size: (20, 10),
         }
     }
@@ -169,6 +170,7 @@ impl App {
     pub fn init(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         self.widgets.clear();
         self.modules.clear();
+        self.failed.clear();
         self.actions = actions::initialize_scripts()?;
         for action in self.actions.clone() {
             self.current_loading = action.name.to_owned();
@@ -304,31 +306,37 @@ impl App {
                 let by = check_str(value.get("by").cloned());
                 let text = check_str(value.get("text").cloned());
                 let deadline = check_int(value.get("deadline").cloned());
-                self.visual.insert(data.name.to_owned(), WidgetState::Todo(TodoWidget {
-                    by,
-                    deadline: deadline as u128,
-                    done: false,
-                    // name: data.name.to_owned(),
-                    text,
-                }));
+                self.todo.insert(
+                    0,
+                    TodoWidget {
+                        by,
+                        deadline: deadline as u128,
+                        done: false,
+                        // name: data.name.to_owned(),
+                        text,
+                    },
+                );
+                self.sort_todo();
             }
             "todo_done" => {
-                let todo = self.visual.get_mut(data.name.as_str());
+                let index = check_int(value.get("index").cloned());
+                if index < 1 {
+                    return Ok(());
+                }
+                let todo = self.todo.get_mut(index as usize - 1);
                 let todo = match todo {
-                    Some(todo) => {
-                        todo
-                    }
+                    Some(todo) => todo,
                     None => return Ok(()),
                 };
-                match todo {
-                    WidgetState::Todo(TodoWidget {ref mut done, ..}) => {
-                        *done = true;
-                    }
-                    _ => {}
-                }
+                todo.done = true;
+                self.sort_todo();
             }
             "todo_del" => {
-                let _ = self.visual.remove(data.name.as_str());
+                let index = check_int(value.get("index").cloned());
+                if index >= 1 {
+                    let _ = self.todo.remove(index as usize - 1);
+                }
+                self.sort_todo();
             }
             "reload" => {
                 self.init(terminal)?;
@@ -336,6 +344,10 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+    pub fn sort_todo(&mut self) {
+        self.todo.sort_by(|a, b| a.deadline.cmp(&b.deadline));
+        self.todo.sort_by(|a, b| a.done.cmp(&b.done));
     }
     pub fn exec(&mut self) -> Result<()> {
         for (name, module) in self.modules.iter() {
@@ -345,7 +357,7 @@ impl App {
                     let res = module
                         .locals
                         .get_item("update", vm)
-                        .expect("no update function");
+                        .unwrap_or(vm.new_function("update", || {}).to_pyobject(vm));
                     let result = res.call((), vm);
                     match result {
                         Err(e) => {
@@ -486,7 +498,6 @@ impl Widget for &mut App {
         .flex(Flex::Start)
         .split(visual_inner);
 
-        let mut todo_list = Vec::new();
         for (_, view) in self.visual.iter_mut() {
             match view {
                 WidgetState::BigText(BigTextWidget {
@@ -496,46 +507,50 @@ impl Widget for &mut App {
                     *area = visual_layout[0].clone();
                     big_text.clone().render(visual_layout[0], buf);
                 }
-                WidgetState::Todo(TodoWidget {
-                    text,
-                    done,
-                    by,
-                    deadline,
-                    ..
-                }) => {
-                    let mut modifier = Modifier::empty();
-                    let color;
-                    let mark;
-                    if done.clone() {
-                        modifier |= Modifier::CROSSED_OUT;
-                        color = Color::Gray;
-                        mark = "✅ ";
-                    } else {
-                        color = Color::White;
-                        mark = "🕒 ";
-                    }
-
-                    todo_list.push((
-                        deadline,
-                        Line::from(vec![
-                            Span::styled(mark, Style::new()),
-                            Span::styled(
-                                text.clone(),
-                                Style::default().fg(color).add_modifier(modifier),
-                            ),
-                            Span::styled(format!(" by. {}", by), Style::new().dark_gray()).add_modifier(modifier),
-                        ]),
-                    ));
-                }
                 _ => continue,
             }
         }
+        let mut todo_list = Vec::new();
+        for (i, todo) in self.todo.iter().enumerate() {
+            let mut modifier = Modifier::empty();
+            let color;
+            let mark;
+            if todo.done.clone() {
+                modifier |= Modifier::CROSSED_OUT;
+                color = Color::Gray;
+                mark = "✅ ";
+            } else {
+                color = Color::White;
+                mark = "🕒 ";
+            }
+
+            todo_list.push(Line::from(vec![
+                Span::styled(mark, Style::new()),
+                Span::styled(
+                    format!("{}.", i + 1),
+                    Style::new()
+                        .fg(color.clone())
+                        .add_modifier(modifier.clone()),
+                ),
+                Span::styled(
+                    todo.text.clone(),
+                    Style::default().fg(color).add_modifier(modifier),
+                ),
+                Span::styled(format!(" by. {}", todo.by), Style::new().dark_gray())
+                    .add_modifier(modifier),
+            ]));
+        }
         if todo_list.len() >= 1 {
-            todo_list.sort_by(|a, b| a.0.clone().partial_cmp(&b.0.clone()).unwrap());
-            let todo_layout = Layout::new(Direction::Vertical, [Constraint::Length(2), Constraint::Fill(1)]).split(visual_layout[1]);
+            let todo_layout = Layout::new(
+                Direction::Vertical,
+                [Constraint::Length(2), Constraint::Fill(1)],
+            )
+            .split(visual_layout[1]);
             Paragraph::new("📋 할 일 목록")
+                .bold()
+                .light_yellow()
                 .render(todo_layout[0], buf);
-            List::new(todo_list.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>())
+            List::new(todo_list)
                 .highlight_symbol(">")
                 .render(todo_layout[1], buf);
         }
@@ -680,8 +695,7 @@ impl Widget for &mut App {
                         }
                         WidgetState::Blank => {
                             Block::new().render(r, buf);
-                        }
-                        _ => {}
+                        } // _ => {}
                     }
                     // i += 1;
                 }
