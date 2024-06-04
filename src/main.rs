@@ -184,8 +184,16 @@ impl App {
                     let code = thread_code.clone();
                     vm.start_thread(move |vm| {
                         let scope = vm.new_scope_with_builtins();
-                        let result = vm.run_code_string(scope, &code, thread_name);
-                        match result {
+                        let code_obj = vm.compile(&code, vm::compiler::Mode::Exec, thread_name);
+                        let code_obj = match code_obj {
+                            Ok(code) => code,
+                            Err(e) => {
+                                let _ = log::println(&format!("ThreadInit: {}", e.error.to_string()));
+                                return;
+                            }
+                        };
+                        match vm.run_code_obj(code_obj, scope.clone()) {
+                            Ok(_) => {}
                             Err(e) => {
                                 let _ = log::println(&format!(
                                     "Thread: {}",
@@ -199,7 +207,6 @@ impl App {
                                     ));
                                 }
                             }
-                            _ => {}
                         }
                     });
                 });
