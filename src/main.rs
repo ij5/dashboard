@@ -6,7 +6,7 @@ use std::{
 
 use actions::Action;
 use anyhow::Result;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
@@ -58,7 +58,7 @@ pub struct App {
     current_loading: String,
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
-    send: Sender<modules::dashboard_sys::FrameData>,
+    // send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState>,
     visual: HashMap<String, WidgetState>,
     todo: Vec<TodoWidget>,
@@ -159,7 +159,7 @@ impl App {
             current_loading: String::new(),
             picker,
             recv,
-            send,
+            // send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
             todo: Vec::new(),
@@ -387,6 +387,9 @@ impl App {
             "reload" => {
                 self.init(terminal)?;
             }
+            "exit" => {
+                self.exit();
+            }
             _ => {}
         }
         Ok(())
@@ -490,11 +493,11 @@ impl App {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Esc => self.exit(),
             KeyCode::Char('r') => {
-                let _ = self.send.send(modules::dashboard_sys::FrameData {
-                    action: "reload".to_owned(),
-                    name: "reload".to_owned(),
-                    value: serde_json::Value::Null,
-                });
+                // let _ = self.send.send(modules::dashboard_sys::FrameData {
+                //     action: "reload".to_owned(),
+                //     name: "reload".to_owned(),
+                //     value: serde_json::Value::Null,
+                // });
             }
             KeyCode::Char('=' | '+') => {
                 self.size.0 += 2;

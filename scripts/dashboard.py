@@ -41,7 +41,8 @@ def todo_done(index: int):
 def todo_del(index: int):
     send(action="todo_del", name="", value=dict(index=index))
 
-
+def exit():
+    send(action="exit", name="", value=dict())
 
 class FileOut(object):
     def write(self, text):
