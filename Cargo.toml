@@ -15,7 +15,7 @@ rand = "0.8.5"
 ratatui = { version = "0.26.3", features = ["all-widgets"] }
 ratatui-image = { version = "1.0.0" }
 reqwest = { version = "0.12.4" }
-rustpython-stdlib = { version = "0.3.1", features = ["threading", "ssl"] }
+rustpython-stdlib = { version = "0.3.1", features = ["threading", "ssl", "ssl-vendor"] }
 rustpython-vm = { version = "0.3.1", features = ["freeze-stdlib", "threading"] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
