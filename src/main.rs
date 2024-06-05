@@ -860,7 +860,21 @@ impl Widget for &mut App<'_> {
                             name,
                             border_color,
                         }) => {
-                            Paragraph::new(Line::from(span))
+                            let mut text: Vec<Line<'_>> = vec![];
+                            let mut line = vec![];
+                            for s in span.iter() {
+                                if s.content.contains("\n") {
+                                    line.push(s.clone().into());
+                                    text.push(line.clone().into());
+                                    line.clear();
+                                } else {
+                                    line.push(s.clone().into());
+                                }
+                            }
+                            if line.len() >= 1 {
+                                text.push(line.clone().into());
+                            }
+                            Paragraph::new(text)
                                 .alignment(align)
                                 .wrap(Wrap { trim: false })
                                 .block(
