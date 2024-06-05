@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     }
 }
 
-impl Drop for App {
+impl Drop for App<'_> {
     fn drop(&mut self) {
         match serde_json::to_string(&self.state) {
             Ok(json) => {
@@ -63,7 +63,7 @@ impl Drop for App {
     }
 }
 
-pub struct App {
+pub struct App<'a> {
     exit: bool,
     actions: Vec<Action>,
     failed: Vec<String>,
@@ -73,8 +73,8 @@ pub struct App {
     picker: Picker,
     recv: Receiver<modules::dashboard_sys::FrameData>,
     send: Sender<modules::dashboard_sys::FrameData>,
-    widgets: HashMap<String, WidgetState>,
-    visual: HashMap<String, WidgetState>,
+    widgets: HashMap<String, WidgetState<'a>>,
+    visual: HashMap<String, WidgetState<'a>>,
     state: AppState,
 }
 
@@ -86,10 +86,11 @@ struct AppState {
 }
 
 #[derive(Clone)]
-enum WidgetState {
+enum WidgetState<'a> {
     Text(TextWidget),
     Image(ImageWidget),
     BigText(BigTextWidget),
+    ColorText(ColorTextWidget<'a>),
     Blank,
 }
 
@@ -107,6 +108,13 @@ struct TextWidget {
     text: String,
     color: Color,
     align: Alignment,
+}
+
+#[derive(Clone)]
+struct ColorTextWidget<'a> {
+    span: Vec<Span<'a>>,
+    align: Alignment,
+    name: String,
 }
 
 #[derive(Clone)]
@@ -148,7 +156,19 @@ fn check_int(value: Option<serde_json::Value>) -> i64 {
     num
 }
 
-impl App {
+fn check_bool(value: Option<serde_json::Value>, default: bool) -> bool {
+    let value = match value {
+        Some(value) => value,
+        None => return default,
+    };
+    let boolean = match value.as_bool() {
+        Some(b) => b,
+        None => return default,
+    };
+    boolean
+}
+
+impl App<'_> {
     pub fn new(actions: Vec<Action>) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
@@ -335,6 +355,63 @@ impl App {
                     name: data.name.to_owned(),
                 });
                 let _ = self.widgets.insert(data.name.to_owned(), state);
+            }
+            "color_text" => {
+                let lines = value.get("lines").cloned();
+                let lines = match lines {
+                    Some(line) => line.as_array().cloned(),
+                    None => Some(Vec::new()),
+                };
+                let lines = match lines {
+                    Some(line) => line,
+                    None => Vec::new(),
+                };
+                let mut spans = Vec::new();
+                for line in lines.iter() {
+                    let text = check_str(line.get("text").cloned());
+                    let color = check_str(line.get("color").cloned());
+                    let bold = check_bool(line.get("bold").cloned(), false);
+                    let underline = check_bool(line.get("underline").cloned(), false);
+                    let italic = check_bool(line.get("italic").cloned(), false);
+                    let crosslined = check_bool(line.get("crossline").cloned(), false);
+                    let color = Color::from_str(&color);
+                    let mut modifier = Modifier::empty();
+                    if bold {
+                        modifier |= Modifier::BOLD;
+                    }
+                    if underline {
+                        modifier |= Modifier::UNDERLINED;
+                    }
+                    if italic {
+                        modifier |= Modifier::ITALIC;
+                    }
+                    if crosslined {
+                        modifier |= Modifier::CROSSED_OUT;
+                    }
+                    spans.push(
+                        Span::raw(text).style(
+                            Style::new()
+                                .fg(color.unwrap_or(Color::White))
+                                .add_modifier(modifier),
+                        ),
+                    );
+                }
+                let align = check_str(value.get("align").cloned());
+                let alignment = if align == "center" {
+                    Alignment::Center
+                } else if align == "left" {
+                    Alignment::Left
+                } else if align == "right" {
+                    Alignment::Right
+                } else {
+                    Alignment::Center
+                };
+                let state = WidgetState::ColorText(ColorTextWidget {
+                    span: spans,
+                    align: alignment,
+                    name: data.name.to_owned(),
+                });
+                self.widgets.insert(data.name.to_owned(), state);
             }
             "clear" => {
                 self.widgets.remove(&data.name);
@@ -552,7 +629,7 @@ impl App {
     }
 }
 
-impl Widget for &mut App {
+impl Widget for &mut App<'_> {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
@@ -772,6 +849,13 @@ impl Widget for &mut App {
                                         .title(name.as_str())
                                         .padding(Padding::horizontal(1)),
                                 )
+                                .render(r, buf);
+                        }
+                        WidgetState::ColorText(ColorTextWidget { span, align, name }) => {
+                            Paragraph::new(Line::from(span))
+                                .alignment(align)
+                                .wrap(Wrap { trim: false })
+                                .block(block.clone().title(name).padding(Padding::horizontal(1)))
                                 .render(r, buf);
                         }
                         WidgetState::Image(ImageWidget { name, .. }) => {
