@@ -39,8 +39,8 @@ def text(name: str, text: str, *, color: str = "white", align="center"):
     send(action="text", name=name, value=dict(text=text, color=color, align=align))
 
 
-def styled_text(name: str, text: list[dict], align: str = "center"):
-    send(action="color_text", name=name, value=dict(lines=text, align=align))
+def styled_text(name: str, text: list[dict], *, color: str = "whitee", align: str = "center"):
+    send(action="color_text", name=name, value=dict(color=color, lines=text, align=align))
 
 
 def make_text(

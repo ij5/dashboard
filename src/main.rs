@@ -115,6 +115,7 @@ struct ColorTextWidget<'a> {
     span: Vec<Span<'a>>,
     align: Alignment,
     name: String,
+    border_color: Color,
 }
 
 #[derive(Clone)]
@@ -366,6 +367,7 @@ impl App<'_> {
                     Some(line) => line,
                     None => Vec::new(),
                 };
+                let border_color = check_str(value.get("color").cloned());
                 let mut spans = Vec::new();
                 for line in lines.iter() {
                     let text = check_str(line.get("text").cloned());
@@ -410,6 +412,7 @@ impl App<'_> {
                     span: spans,
                     align: alignment,
                     name: data.name.to_owned(),
+                    border_color: Color::from_str(&border_color).unwrap_or(Color::White),
                 });
                 self.widgets.insert(data.name.to_owned(), state);
             }
@@ -851,11 +854,22 @@ impl Widget for &mut App<'_> {
                                 )
                                 .render(r, buf);
                         }
-                        WidgetState::ColorText(ColorTextWidget { span, align, name }) => {
+                        WidgetState::ColorText(ColorTextWidget {
+                            span,
+                            align,
+                            name,
+                            border_color,
+                        }) => {
                             Paragraph::new(Line::from(span))
                                 .alignment(align)
                                 .wrap(Wrap { trim: false })
-                                .block(block.clone().title(name).padding(Padding::horizontal(1)))
+                                .block(
+                                    block
+                                        .clone()
+                                        .border_style(border_color)
+                                        .title(name)
+                                        .padding(Padding::horizontal(1)),
+                                )
                                 .render(r, buf);
                         }
                         WidgetState::Image(ImageWidget { name, .. }) => {
