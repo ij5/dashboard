@@ -672,7 +672,7 @@ impl Widget for &mut App<'_> {
     {
         let layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Percentage(30), Constraint::Percentage(70)])
+            .constraints(vec![Constraint::Percentage(25), Constraint::Percentage(75)])
             .margin(1)
             .split(area);
         let left_layout = Layout::default()
