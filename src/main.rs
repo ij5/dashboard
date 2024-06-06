@@ -1,27 +1,24 @@
 use std::{
-    collections::HashMap,
-    str::FromStr,
-    time::{Duration, Instant},
+    collections::HashMap, str::FromStr, time::{Duration, Instant}
 };
 
 use actions::Action;
-use anyhow::Result;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
+use color_eyre::eyre::{bail, Result};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
     style::{Color, Modifier, Style, Stylize},
     symbols::Marker,
     text::{Line, Span},
     widgets::{
-        Axis, Block, Borders, Chart, Dataset, GraphType, LineGauge, List, Padding, Paragraph, Widget, Wrap
+        Axis, Block, Borders, Chart, Dataset, GraphType, LineGauge, List, Padding, Paragraph,
+        Widget, Wrap,
     },
     Frame,
 };
 use ratatui_image::{
-    picker::{Picker, ProtocolType},
-    protocol::StatefulProtocol,
-    FilterType, Resize, StatefulImage,
+    picker::Picker, protocol::StatefulProtocol, FilterType, Resize, StatefulImage,
 };
 use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
 use serde::{Deserialize, Serialize};
@@ -31,25 +28,48 @@ mod actions;
 mod log;
 mod modules;
 mod tui;
+mod errors;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> color_eyre::Result<()> {
+    errors::install_hooks()?;
     std::fs::write("run.log", "")?;
     let _ = std::fs::create_dir("scripts");
     log::println("Program Started...")?;
     let actions = actions::initialize_scripts()?;
     let mut terminal = tui::init()?;
+    let args = std::env::args().collect::<Vec<_>>();
+    let mut size = None;
+    if args.len() == 2 {
+        let _size = args.get(1).cloned().unwrap_or(String::from("1280x720"));
+        let _size = _size
+            .split("x")
+            .map(|v| {
+                v.to_string()
+                    .parse::<usize>()
+                    .expect("unexpected format. ex) 1920x1080")
+            })
+            .collect::<Vec<usize>>();
+        if _size.len() != 2 {
+            panic!("unexpected length. expected: 2, got: {}", _size.len());
+        }
+        log::println(&format!(
+            "launching terminal with fixed size ({}, {})",
+            _size[0] / 8,
+            _size[1] / 16
+        ))?;
+        size = Some((_size[0] / 8, _size[1] / 16));
+    }
 
-    let result = App::new(actions).run(&mut terminal);
+    let result = App::new(actions, size).run(&mut terminal);
 
     tui::restore()?;
 
-    match result {
-        Ok(_) => Ok(()),
+    match result{
         Err(e) => {
-            let _ = log::println(e.backtrace().to_string().as_str());
-            Err(anyhow::Error::msg(format!("{:?}", e)))
+            bail!(e);
         }
+        _ => Ok(())
     }
 }
 
@@ -60,7 +80,7 @@ impl Drop for App<'_> {
                 let _ = std::fs::write("data.json", json);
             }
             Err(e) => {
-                println!("{:?}", e);
+                println!("MainError: {:?}", e);
             }
         }
     }
@@ -79,6 +99,7 @@ pub struct App<'a> {
     widgets: HashMap<String, WidgetState<'a>>,
     visual: HashMap<String, WidgetState<'a>>,
     state: AppState,
+    size: Option<(usize, usize)>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -192,7 +213,7 @@ fn check_bool(value: Option<serde_json::Value>, default: bool) -> bool {
 }
 
 impl App<'_> {
-    pub fn new(actions: Vec<Action>) -> Self {
+    pub fn new(actions: Vec<Action>, size: Option<(usize, usize)>) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
         let path = std::env::var("RUSTPYTHONPATH");
@@ -212,7 +233,7 @@ impl App<'_> {
             );
         });
         let mut picker = Picker::new((8, 16));
-        picker.protocol_type = ProtocolType::Halfblocks;
+        picker.guess_protocol();
         let raw = std::fs::read_to_string("data.json").unwrap_or("{}".to_owned());
         let state = serde_json::from_str::<AppState>(&raw).unwrap_or(AppState {
             w: 20,
@@ -232,6 +253,7 @@ impl App<'_> {
             widgets: HashMap::new(),
             visual: HashMap::new(),
             state,
+            size,
         }
     }
 
@@ -381,7 +403,7 @@ impl App<'_> {
             }
             "chart" => {
                 let options: ChartWidget = match serde_json::from_value(value) {
-                    Ok(value) =>  value,
+                    Ok(value) => value,
                     Err(e) => {
                         let _ = log::println(e.to_string().as_str());
                         return Ok(());
@@ -612,7 +634,7 @@ impl App<'_> {
         frame.render_widget(self, frame.size());
     }
     fn handle_events(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        match poll(Duration::from_millis(100)) {
+        match poll(Duration::from_millis(10)) {
             Ok(result) => {
                 if !result {
                     return Ok(());
@@ -623,12 +645,17 @@ impl App<'_> {
                             self.handle_key_event(key);
                         }
                     }
-                    event::Event::Resize(w, h) => {
-                        let size = terminal.size()?;
-                        if w != size.width || h != size.height {
-                            terminal.resize(Rect::new(0, 0, w, h))?;
+                    event::Event::Resize(w, h) => match self.size {
+                        Some((w, h)) => {
+                            terminal.resize(Rect::new(0, 0, w as u16, h as u16))?;
                         }
-                    }
+                        None => {
+                            let size = terminal.size()?;
+                            if w != size.width || h != size.height {
+                                terminal.resize(Rect::new(0, 0, w, h))?;
+                            }
+                        }
+                    },
                     _ => {}
                 }
             }
@@ -641,7 +668,6 @@ impl App<'_> {
     fn handle_key_event(&mut self, key_event: event::KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
-            KeyCode::Esc => self.exit(),
             KeyCode::Char('r') => {
                 let _ = self.send.send(modules::dashboard_sys::FrameData {
                     action: "reload".to_owned(),
@@ -670,11 +696,18 @@ impl Widget for &mut App<'_> {
     where
         Self: Sized,
     {
+        let size = if let Some((w, h)) = self.size {
+            (w as u16, h as u16)
+        } else {
+            (area.width, area.height)
+        };
+        let hroot = Layout::new(Direction::Horizontal, [Constraint::Length(size.0)]).split(area);
+        let vroot = Layout::new(Direction::Vertical, [Constraint::Length(size.1)]).split(hroot[0]);
         let layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(25), Constraint::Percentage(75)])
             .margin(1)
-            .split(area);
+            .split(vroot[0]);
         let left_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![Constraint::Fill(1), Constraint::Length(4)])

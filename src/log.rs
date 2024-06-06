@@ -1,7 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::Write;
-
-use anyhow::Result;
+use color_eyre::eyre::Result;
 
 pub fn println(output: &str) -> Result<()> {
     let mut w = OpenOptions::new()

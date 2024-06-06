@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, fs, path::Path};
 
-use anyhow::Result;
+use color_eyre::eyre::Result;
 
 #[derive(Debug, Default, Clone)]
 pub struct Action {

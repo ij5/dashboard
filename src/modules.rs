@@ -5,7 +5,7 @@ use rustpython_vm::pymodule;
 
 #[pymodule]
 pub mod dashboard_sys {
-    use anyhow::Result;
+    use color_eyre::eyre::Result;
     use crossbeam_channel::Sender;
     use futures::executor;
     use once_cell::sync::OnceCell;
@@ -76,7 +76,7 @@ pub mod dashboard_sys {
         if method == "GET" {
             response = reqwest::get(url).await?.text().await?;
         } else {
-            return Err(anyhow::Error::msg("method incorrect"));
+            return Err(color_eyre::eyre::Error::msg("method incorrect"));
         }
         Ok(response)
     }
