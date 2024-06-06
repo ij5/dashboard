@@ -11,8 +11,11 @@ use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
     style::{Color, Modifier, Style, Stylize},
+    symbols::Marker,
     text::{Line, Span},
-    widgets::{Block, Borders, LineGauge, List, Padding, Paragraph, Widget, Wrap},
+    widgets::{
+        Axis, Block, Borders, Chart, Dataset, GraphType, LineGauge, List, Padding, Paragraph, Widget, Wrap
+    },
     Frame,
 };
 use ratatui_image::{
@@ -91,6 +94,7 @@ enum WidgetState<'a> {
     Image(ImageWidget),
     BigText(BigTextWidget),
     ColorText(ColorTextWidget<'a>),
+    Chart(ChartWidget),
     Blank,
 }
 
@@ -100,6 +104,24 @@ struct TodoWidget {
     done: bool,
     by: String,
     deadline: u128,
+}
+
+#[derive(Clone, Deserialize)]
+struct ChartWidget {
+    name: String,
+    data: Vec<(f64, f64)>,
+    description: String,
+    graph_type: String,
+    marker_type: String,
+    color: String,
+    x_title: String,
+    x_color: String,
+    x_bounds: (f64, f64),
+    x_labels: Vec<String>,
+    y_title: String,
+    y_color: String,
+    y_bounds: (f64, f64),
+    y_labels: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -355,6 +377,17 @@ impl App<'_> {
                     align: alignment,
                     name: data.name.to_owned(),
                 });
+                let _ = self.widgets.insert(data.name.to_owned(), state);
+            }
+            "chart" => {
+                let options: ChartWidget = match serde_json::from_value(value) {
+                    Ok(value) =>  value,
+                    Err(e) => {
+                        let _ = log::println(e.to_string().as_str());
+                        return Ok(());
+                    }
+                };
+                let state = WidgetState::Chart(options);
                 let _ = self.widgets.insert(data.name.to_owned(), state);
             }
             "color_text" => {
@@ -852,6 +885,58 @@ impl Widget for &mut App<'_> {
                                         .title(name.as_str())
                                         .padding(Padding::horizontal(1)),
                                 )
+                                .render(r, buf);
+                        }
+                        WidgetState::Chart(ChartWidget {
+                            color,
+                            data,
+                            description,
+                            graph_type,
+                            marker_type,
+                            name,
+                            x_bounds,
+                            x_color,
+                            x_labels,
+                            x_title,
+                            y_bounds,
+                            y_color,
+                            y_labels,
+                            y_title,
+                        }) => {
+                            let color = Color::from_str(&color).unwrap_or(Color::White);
+                            let x_color = Color::from_str(&x_color).unwrap_or(Color::White);
+                            let y_color = Color::from_str(&y_color).unwrap_or(Color::White);
+                            let data = Dataset::default()
+                                .name(description.to_owned())
+                                .marker(match marker_type.as_str() {
+                                    "braille" => Marker::Braille,
+                                    "dot" => Marker::Dot,
+                                    "bar" => Marker::Bar,
+                                    "block" => Marker::Block,
+                                    "halfblock" => Marker::HalfBlock,
+                                    _ => Marker::Braille,
+                                })
+                                .graph_type(match graph_type.as_str() {
+                                    "scatter" => GraphType::Scatter,
+                                    "line" => GraphType::Line,
+                                    _ => GraphType::Scatter,
+                                })
+                                .style(Style::from(color))
+                                .data(&data);
+                            let x_axis = Axis::default()
+                                .title(Span::styled(x_title, x_color))
+                                .style(Style::default().white())
+                                .bounds(x_bounds.into())
+                                .labels(x_labels.iter().map(|x| x.into()).collect::<Vec<_>>());
+                            let y_axis = Axis::default()
+                                .title(Span::styled(y_title, y_color))
+                                .style(Style::default().white())
+                                .bounds(y_bounds.into())
+                                .labels(y_labels.iter().map(|x| x.into()).collect::<Vec<_>>());
+                            Chart::new(vec![data])
+                                .block(block.clone().title(name.to_owned()))
+                                .x_axis(x_axis)
+                                .y_axis(y_axis)
                                 .render(r, buf);
                         }
                         WidgetState::ColorText(ColorTextWidget {

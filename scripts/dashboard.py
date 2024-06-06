@@ -61,6 +61,39 @@ def make_text(
         crossline=crossline,
     )
 
+def chart(
+    name: str,
+    data: list[(float, float)],
+    *,
+    description: str = "",
+    graph_type: str = "line",
+    marker_type: str = "braille",
+    color: str = "white",
+    x_title: str = "",
+    x_color: str = "blue",
+    x_bounds: tuple[float, float] = (0., 10.),
+    x_labels: list[str] = [],
+    y_title: str = "",
+    y_color: str = "red",
+    y_bounds: tuple[float, float] = (0., 10.),
+    y_labels: list[str] = [],
+):
+    send(action="chart", name=name, value=dict(
+        data=data,
+        name=name,
+        description=description,
+        graph_type=graph_type,
+        marker_type=marker_type,
+        color=color,
+        x_title=x_title,
+        x_color=x_color,
+        x_bounds=x_bounds,
+        x_labels=x_labels,
+        y_title=y_title,
+        y_color=y_color,
+        y_bounds=y_bounds,
+        y_labels=y_labels,
+    ))
 
 def big_text(name: str, text: str, *, color: str = "white", align: str = "center"):
     send(action="big", name=name, value=dict(text=text, color=color, align=align))
