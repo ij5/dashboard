@@ -106,6 +106,8 @@ def reload_scripts():
 def todo_add(id: str, text: str, by: str, deadline: int):
     send(action="todo_add", name=id, value=dict(text=text, by=by, deadline=deadline))
 
+def screenshot(savepath: str):
+    send(action="screenshot", name=savepath, value=dict())
 
 def todo_done(index: int):
     send(action="todo_done", name="", value=dict(index=index))

@@ -59,9 +59,9 @@ async fn main() -> color_eyre::Result<()> {
             _size[0] / 8,
             _size[1] / 16
         ))?;
-        size = Some((_size[0] / 8, _size[1] / 16));
+        size = Some((_size[0], _size[1]));
     }
-    let mut terminal = tui::init(size)?;
+    let mut terminal = tui::init()?;
 
     let result = App::new(actions, size).run(&mut terminal);
 
@@ -102,6 +102,7 @@ pub struct App<'a> {
     visual: HashMap<String, WidgetState<'a>>,
     state: AppState,
     size: Option<(u16, u16)>,
+    screenshot: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -256,6 +257,7 @@ impl App<'_> {
             visual: HashMap::new(),
             state,
             size,
+            screenshot: String::new(),
         }
     }
 
@@ -363,7 +365,19 @@ impl App<'_> {
         self.init(terminal)?;
         let mut time = Instant::now();
         while !self.exit {
-            terminal.draw(|frame| self.render_frame(frame))?;
+            terminal.draw(|frame| {
+                self.render_frame(frame);
+                if self.screenshot.len() > 0 {
+                    let filepath = self.screenshot.clone();
+                    self.screenshot.clear();
+                    let size = self.size.clone();
+                    let buffer = frame.buffer_mut().clone();
+                    let num_pixels = frame.size().clone();
+                    tokio::task::spawn_blocking(move || {
+                        let _ = tui::screenshot(buffer, num_pixels, size, &filepath);
+                    });
+                }
+            })?;
             self.handle_events(terminal)?;
             self.consumer(terminal)?;
             if time.elapsed().as_millis() > 1000 {
@@ -382,6 +396,9 @@ impl App<'_> {
         };
         let value = data.value;
         match data.action.as_str() {
+            "screenshot" => {
+                self.screenshot = data.name.clone();
+            }
             "text" => {
                 let text = check_str(value.get("text").cloned());
                 let color = check_str(value.get("color").cloned());
@@ -647,17 +664,12 @@ impl App<'_> {
                             self.handle_key_event(key);
                         }
                     }
-                    event::Event::Resize(w, h) => match self.size {
-                        Some((w, h)) => {
-                            terminal.resize(Rect::new(0, 0, w as u16, h as u16))?;
+                    event::Event::Resize(w, h) => {
+                        let size = terminal.size()?;
+                        if w != size.width || h != size.height {
+                            terminal.resize(Rect::new(0, 0, w, h))?;
                         }
-                        None => {
-                            let size = terminal.size()?;
-                            if w != size.width || h != size.height {
-                                terminal.resize(Rect::new(0, 0, w, h))?;
-                            }
-                        }
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -674,6 +686,13 @@ impl App<'_> {
                 let _ = self.send.send(modules::dashboard_sys::FrameData {
                     action: "reload".to_owned(),
                     name: "reload".to_owned(),
+                    value: serde_json::Value::Null,
+                });
+            }
+            KeyCode::Char('s') => {
+                let _ = self.send.send(modules::dashboard_sys::FrameData {
+                    action: "screenshot".to_owned(),
+                    name: "output.png".to_owned(),
                     value: serde_json::Value::Null,
                 });
             }
