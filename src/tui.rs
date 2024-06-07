@@ -31,7 +31,7 @@ fn to_rgb(color: Color) -> Rgb<u8> {
         Color::Cyan => [0, 170, 170],
         Color::DarkGray => [85, 85, 85],
         Color::Green => [0, 170, 0],
-        Color::Indexed(_) => [0, 0, 0],
+        Color::Indexed(_) => [255, 255, 255],
         Color::LightBlue => [85, 85, 255],
         Color::LightCyan => [85, 255, 255],
         Color::LightGreen => [85, 255, 85],
@@ -70,21 +70,15 @@ pub fn screenshot(
     let font = FontRef::try_from_slice(include_bytes!("d2.ttc"))?;
     let mut image = RgbImage::new(size.0 as u32, size.1 as u32);
     for y in 0..buffers.area.height {
+        let mut prev = " ";
         for x in 0..buffers.area.width {
             let cell = buffers.get(x, y);
             let scale = PxScale { x: 17., y: 17. };
             let symbol = cell.symbol();
-            let mut skip_fg = false;
-            if symbol == " " {
-                match cell.fg {
-                    Color::Reset => {
-                        skip_fg = true;
-                    }
-                    _ => {
-                        continue;
-                    }
-                }
+            if symbol == " " && prev != "▀" {
+                continue;
             }
+            prev = symbol;
             let w = pixel_size.0;
             let h = pixel_size.1;
             draw_filled_rect_mut(
@@ -96,7 +90,7 @@ pub fn screenshot(
                 .of_size(x as u32 * w + w + 1, y as u32 * h + h + 1),
                 to_rgb(cell.bg),
             );
-            if skip_fg {
+            if symbol == " " {
                 continue;
             }
             draw_text_mut(
