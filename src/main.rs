@@ -1,11 +1,13 @@
 use std::{
-    collections::HashMap, str::FromStr, time::{Duration, Instant}
+    collections::HashMap,
+    str::FromStr,
+    time::{Duration, Instant},
 };
 
 use actions::Action;
+use color_eyre::eyre::{bail, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
-use color_eyre::eyre::{bail, Result};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
     style::{Color, Modifier, Style, Stylize},
@@ -25,10 +27,10 @@ use serde::{Deserialize, Serialize};
 use tui_big_text::{BigText, PixelSize};
 
 mod actions;
+mod errors;
 mod log;
 mod modules;
 mod tui;
-mod errors;
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
@@ -37,7 +39,6 @@ async fn main() -> color_eyre::Result<()> {
     let _ = std::fs::create_dir("scripts");
     log::println("Program Started...")?;
     let actions = actions::initialize_scripts()?;
-    let mut terminal = tui::init()?;
     let args = std::env::args().collect::<Vec<_>>();
     let mut size = None;
     if args.len() == 2 {
@@ -46,10 +47,10 @@ async fn main() -> color_eyre::Result<()> {
             .split("x")
             .map(|v| {
                 v.to_string()
-                    .parse::<usize>()
+                    .parse::<u16>()
                     .expect("unexpected format. ex) 1920x1080")
             })
-            .collect::<Vec<usize>>();
+            .collect::<Vec<u16>>();
         if _size.len() != 2 {
             panic!("unexpected length. expected: 2, got: {}", _size.len());
         }
@@ -60,16 +61,17 @@ async fn main() -> color_eyre::Result<()> {
         ))?;
         size = Some((_size[0] / 8, _size[1] / 16));
     }
+    let mut terminal = tui::init(size)?;
 
     let result = App::new(actions, size).run(&mut terminal);
 
     tui::restore()?;
 
-    match result{
+    match result {
         Err(e) => {
             bail!(e);
         }
-        _ => Ok(())
+        _ => Ok(()),
     }
 }
 
@@ -99,7 +101,7 @@ pub struct App<'a> {
     widgets: HashMap<String, WidgetState<'a>>,
     visual: HashMap<String, WidgetState<'a>>,
     state: AppState,
-    size: Option<(usize, usize)>,
+    size: Option<(u16, u16)>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -213,7 +215,7 @@ fn check_bool(value: Option<serde_json::Value>, default: bool) -> bool {
 }
 
 impl App<'_> {
-    pub fn new(actions: Vec<Action>, size: Option<(usize, usize)>) -> Self {
+    pub fn new(actions: Vec<Action>, size: Option<(u16, u16)>) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
         let path = std::env::var("RUSTPYTHONPATH");
