@@ -1,14 +1,17 @@
 use std::{
     collections::HashMap,
     str::FromStr,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use actions::Action;
 use color_eyre::eyre::{bail, Result};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Sender as CSender, Receiver as CReceiver, unbounded};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
+use futures::{SinkExt, StreamExt};
 use ratatui::{
+    buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
     style::{Color, Modifier, Style, Stylize},
     symbols::Marker,
@@ -24,6 +27,9 @@ use ratatui_image::{
 };
 use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
 use serde::{Deserialize, Serialize};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast::{channel, Receiver, Sender};
+use tokio_tungstenite::tungstenite::Message;
 use tui_big_text::{BigText, PixelSize};
 
 mod actions;
@@ -61,17 +67,49 @@ async fn main() -> color_eyre::Result<()> {
         ))?;
         size = Some((_size[0], _size[1]));
     }
-    let mut terminal = tui::init()?;
 
-    let result = App::new(actions, size).run(&mut terminal);
+    let last_buffer = Arc::new(Mutex::new(Buffer::default()));
+
+    let try_socket = TcpListener::bind("0.0.0.0:8282".to_string()).await;
+    let listener = try_socket.expect("Failed to bind 0.0.0.0:8282");
+    let (sender, _) = channel::<Vec<u8>>(128);
+
+    let mut terminal = tui::init()?;
+    let cloned_buffer = last_buffer.clone();
+    let cloned_sender = sender.clone();
+    let handle = tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(serve(stream, cloned_sender.subscribe(), cloned_buffer.clone()));
+        }
+    });
+
+    let result = App::new(actions, size, last_buffer.clone()).run(&mut terminal, sender);
 
     tui::restore()?;
+    handle.abort();
 
     match result {
         Err(e) => {
             bail!(e);
         }
         _ => Ok(()),
+    }
+}
+
+async fn serve(stream: TcpStream, mut receiver: Receiver<Vec<u8>>, last_buffer: Arc<Mutex<Buffer>>) {
+    let ws_stream = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("Error during the websocket handshake occurred");
+    let (mut ws_sender, _) = ws_stream.split();
+    let buffer = last_buffer.lock().unwrap().clone();
+    let output = tui::to_ansi(buffer, Arc::new(Mutex::new(Buffer::empty(Rect::ZERO))));
+    let _ = ws_sender.send(Message::Binary(output.into_bytes())).await;
+    while let Ok(msg) = receiver.recv().await {
+        let result = ws_sender.send(Message::Binary(msg)).await;
+        match result {
+            Ok(_) => {}
+            Err(_) => break,
+        }
     }
 }
 
@@ -96,13 +134,15 @@ pub struct App<'a> {
     interpreter: vm::Interpreter,
     current_loading: String,
     picker: Picker,
-    recv: Receiver<modules::dashboard_sys::FrameData>,
-    send: Sender<modules::dashboard_sys::FrameData>,
+    recv: CReceiver<modules::dashboard_sys::FrameData>,
+    send: CSender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState<'a>>,
     visual: HashMap<String, WidgetState<'a>>,
     state: AppState,
     size: Option<(u16, u16)>,
     screenshot: String,
+
+    last_buffer: Arc<Mutex<Buffer>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -216,7 +256,11 @@ fn check_bool(value: Option<serde_json::Value>, default: bool) -> bool {
 }
 
 impl App<'_> {
-    pub fn new(actions: Vec<Action>, size: Option<(u16, u16)>) -> Self {
+    pub fn new(
+        actions: Vec<Action>,
+        size: Option<(u16, u16)>,
+        last_buffer: Arc<Mutex<Buffer>>,
+    ) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
         let path = std::env::var("RUSTPYTHONPATH");
@@ -258,6 +302,7 @@ impl App<'_> {
             state,
             size,
             screenshot: String::new(),
+            last_buffer,
         }
     }
 
@@ -266,6 +311,7 @@ impl App<'_> {
         if self.modules.len() >= 1 {
             second = true;
         }
+        let _ = terminal.clear();
         self.modules.clear();
         self.widgets.clear();
         self.failed.clear();
@@ -354,36 +400,44 @@ impl App<'_> {
             }
         }
         self.current_loading.clear();
+        self.last_buffer.lock().unwrap().merge(terminal.current_buffer_mut());
         Ok(())
     }
 
-    pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
+    pub fn run(&mut self, terminal: &mut tui::TUI, sender: Sender<Vec<u8>>) -> Result<()> {
         self.interpreter.enter(|vm| {
             vm.insert_sys_path(vm.new_pyobj("scripts"))
                 .expect("add path");
         });
         self.init(terminal)?;
-        let mut time = Instant::now();
+        let mut time = Instant::now() - Duration::from_millis(2000);
         while !self.exit {
-            terminal.draw(|frame| {
+            let frame = terminal.draw(|frame| {
                 self.render_frame(frame);
-                if self.screenshot.len() > 0 {
-                    let filepath = self.screenshot.clone();
-                    self.screenshot.clear();
-                    let size = self.size.clone();
-                    let buffer = frame.buffer_mut().clone();
-                    let num_pixels = frame.size().clone();
-                    tokio::task::spawn_blocking(move || {
-                        let _ = tui::screenshot(buffer, num_pixels, size, &filepath);
-                    });
-                }
+                // if self.screenshot.len() > 0 {
+                //     let filepath = self.screenshot.clone();
+                //     self.screenshot.clear();
+                //     let size = self.size.clone();
+                //     let buffer = frame.buffer_mut().clone();
+                //     let num_pixels = frame.size().clone();
+                //     tokio::task::spawn_blocking(move || {
+                //         let _ = tui::screenshot(buffer, num_pixels, size, &filepath);
+                //     });
+                // }
             })?;
-            self.handle_events(terminal)?;
-            self.consumer(terminal)?;
             if time.elapsed().as_millis() > 1000 {
                 time = Instant::now();
                 self.exec()?;
+
+                let output = tui::to_ansi(frame.buffer.clone(), self.last_buffer.clone());
+                if output.len() == 0 {
+                    continue;
+                }
+                let _ = sender.send(output.into_bytes());
+                self.last_buffer.lock().unwrap().merge(terminal.current_buffer_mut());
             }
+            self.handle_events(terminal)?;
+            self.consumer(terminal)?;
         }
         Ok(())
     }

@@ -1,16 +1,31 @@
-use std::io::{self, stdout, Stdout, Write};
+use std::{
+    io::{self, stdout, Stdout, Write},
+    sync::{Arc, Mutex},
+};
 
 use ab_glyph::{FontRef, PxScale};
 use crossterm::{
+    cursor::MoveTo,
     execute,
+    style::{
+        Attribute, Color as CColor, Colors, Print, SetAttribute, SetBackgroundColor, SetColors,
+        SetForegroundColor, SetUnderlineColor,
+    },
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    Command,
 };
 use imageproc::{
     drawing::{draw_filled_rect_mut, draw_text_mut},
     image::{ImageFormat, Rgb, RgbImage},
     rect::Rect as ImageRect,
 };
-use ratatui::{backend::CrosstermBackend, buffer::Buffer, layout::Rect, style::Color, Terminal, Viewport};
+use ratatui::{
+    backend::CrosstermBackend,
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Modifier},
+    Terminal, Viewport,
+};
 
 pub type TUI = Terminal<CrosstermBackend<Stdout>>;
 
@@ -22,6 +37,89 @@ pub fn init() -> io::Result<TUI> {
         CrosstermBackend::new(stdout()),
         ratatui::TerminalOptions { viewport },
     )
+}
+
+pub fn to_ansi(current_buffer: Buffer, last_buffer: Arc<Mutex<Buffer>>) -> String {
+    let mut output = String::new();
+    let updates = last_buffer.lock().unwrap().clone().diff(&current_buffer);
+    let mut fg = Color::Reset;
+    let mut bg = Color::Reset;
+    let mut modifier = Modifier::empty();
+    let mut last_pos: Option<(u16, u16)> = None;
+    for (x, y, cell) in updates.into_iter() {
+        if !matches!(last_pos, Some(p) if x == p.0 + 1 && y == p.1) {
+            let _ = MoveTo(x, y).write_ansi(&mut output);
+        }
+        last_pos = Some((x, y));
+        let cloned_modifier = modifier.clone();
+        if cell.modifier != cloned_modifier {
+            let removed = cloned_modifier - cell.modifier;
+            if removed.contains(Modifier::REVERSED) {
+                let _ = SetAttribute(Attribute::NoReverse).write_ansi(&mut output);
+            }
+            if removed.contains(Modifier::BOLD) {
+                let _ = SetAttribute(Attribute::NormalIntensity).write_ansi(&mut output);
+                if cell.modifier.contains(Modifier::DIM) {
+                    let _ = SetAttribute(Attribute::Dim).write_ansi(&mut output);
+                }
+            }
+            if removed.contains(Modifier::ITALIC) {
+                let _ = SetAttribute(Attribute::NoItalic).write_ansi(&mut output);
+            }
+            if removed.contains(Modifier::UNDERLINED) {
+                let _ = SetAttribute(Attribute::NoUnderline).write_ansi(&mut output);
+            }
+            if removed.contains(Modifier::DIM) {
+                let _ = SetAttribute(Attribute::NormalIntensity).write_ansi(&mut output);
+            }
+            if removed.contains(Modifier::CROSSED_OUT) {
+                let _ = SetAttribute(Attribute::NotCrossedOut).write_ansi(&mut output);
+            }
+            if removed.contains(Modifier::SLOW_BLINK) || removed.contains(Modifier::RAPID_BLINK) {
+                let _ = SetAttribute(Attribute::NoBlink).write_ansi(&mut output);
+            }
+            let added = cell.modifier - cloned_modifier;
+            if added.contains(Modifier::REVERSED) {
+                let _ = SetAttribute(Attribute::Reverse).write_ansi(&mut output);
+            }
+            if added.contains(Modifier::BOLD) {
+                let _ = SetAttribute(Attribute::Bold).write_ansi(&mut output);
+            }
+            if added.contains(Modifier::ITALIC) {
+                let _ = SetAttribute(Attribute::Italic).write_ansi(&mut output);
+            }
+            if added.contains(Modifier::UNDERLINED) {
+                let _ = SetAttribute(Attribute::Underlined).write_ansi(&mut output);
+            }
+            if added.contains(Modifier::DIM) {
+                let _ = SetAttribute(Attribute::Dim).write_ansi(&mut output);
+            }
+            if added.contains(Modifier::CROSSED_OUT) {
+                let _ = SetAttribute(Attribute::CrossedOut).write_ansi(&mut output);
+            }
+            if added.contains(Modifier::SLOW_BLINK) {
+                let _ = SetAttribute(Attribute::SlowBlink).write_ansi(&mut output);
+            }
+
+            if added.contains(Modifier::RAPID_BLINK) {
+                let _ = SetAttribute(Attribute::RapidBlink).write_ansi(&mut output);
+            }
+            modifier = cell.modifier;
+        }
+        if cell.fg != fg.clone() || cell.bg != bg.clone() {
+            let _ = SetColors(Colors::new(cell.fg.into(), cell.bg.into())).write_ansi(&mut output);
+            fg = cell.fg;
+            bg = cell.bg;
+        }
+        let _ = Print(cell.symbol()).write_ansi(&mut output);
+    }
+    // TODO: Underline
+    let _ = SetForegroundColor(CColor::Reset).write_ansi(&mut output);
+    let _ = SetBackgroundColor(CColor::Reset).write_ansi(&mut output);
+    let _ = SetUnderlineColor(CColor::Reset).write_ansi(&mut output);
+    let _ = SetAttribute(Attribute::Reset).write_ansi(&mut output);
+    last_buffer.lock().unwrap().merge(&current_buffer.clone());
+    output
 }
 
 fn to_rgb(color: Color) -> Rgb<u8> {
