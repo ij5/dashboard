@@ -7,7 +7,7 @@ use std::{
 
 use actions::Action;
 use color_eyre::eyre::{bail, Result};
-use crossbeam_channel::{Sender as CSender, Receiver as CReceiver, unbounded};
+use crossbeam_channel::{unbounded, Receiver as CReceiver, Sender as CSender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use futures::{SinkExt, StreamExt};
 use ratatui::{
@@ -79,7 +79,11 @@ async fn main() -> color_eyre::Result<()> {
     let cloned_sender = sender.clone();
     let handle = tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(serve(stream, cloned_sender.subscribe(), cloned_buffer.clone()));
+            tokio::spawn(serve(
+                stream,
+                cloned_sender.subscribe(),
+                cloned_buffer.clone(),
+            ));
         }
     });
 
@@ -96,13 +100,18 @@ async fn main() -> color_eyre::Result<()> {
     }
 }
 
-async fn serve(stream: TcpStream, mut receiver: Receiver<Vec<u8>>, last_buffer: Arc<Mutex<Buffer>>) {
+async fn serve(
+    stream: TcpStream,
+    mut receiver: Receiver<Vec<u8>>,
+    last_buffer: Arc<Mutex<Buffer>>,
+) {
     let ws_stream = tokio_tungstenite::accept_async(stream)
         .await
         .expect("Error during the websocket handshake occurred");
     let (mut ws_sender, _) = ws_stream.split();
     let buffer = last_buffer.lock().unwrap().clone();
-    let output = tui::to_ansi(buffer, Arc::new(Mutex::new(Buffer::empty(Rect::ZERO))));
+    let default_buffer = Buffer::default();
+    let output = tui::to_ansi(buffer, Arc::new(Mutex::new(default_buffer)));
     let _ = ws_sender.send(Message::Binary(output.into_bytes())).await;
     while let Ok(msg) = receiver.recv().await {
         let result = ws_sender.send(Message::Binary(msg)).await;
@@ -400,7 +409,7 @@ impl App<'_> {
             }
         }
         self.current_loading.clear();
-        self.last_buffer.lock().unwrap().merge(terminal.current_buffer_mut());
+        *self.last_buffer.lock().unwrap() = terminal.current_buffer_mut().clone();
         Ok(())
     }
 
@@ -410,7 +419,7 @@ impl App<'_> {
                 .expect("add path");
         });
         self.init(terminal)?;
-        let mut time = Instant::now() - Duration::from_millis(2000);
+        let mut time = Instant::now();
         while !self.exit {
             let frame = terminal.draw(|frame| {
                 self.render_frame(frame);
@@ -429,12 +438,16 @@ impl App<'_> {
                 time = Instant::now();
                 self.exec()?;
 
-                let output = tui::to_ansi(frame.buffer.clone(), self.last_buffer.clone());
+                let output = tui::to_ansi(
+                    frame.buffer.clone(),
+                    self.last_buffer.clone(),
+                );
                 if output.len() == 0 {
                     continue;
                 }
                 let _ = sender.send(output.into_bytes());
-                self.last_buffer.lock().unwrap().merge(terminal.current_buffer_mut());
+                // *self.last_buffer.lock().unwrap() = terminal.current_buffer_mut().clone();
+                // self.last_buffer.lock().unwrap().merge(&frame.buffer.clone());
             }
             self.handle_events(terminal)?;
             self.consumer(terminal)?;
@@ -678,7 +691,7 @@ impl App<'_> {
         Ok(())
     }
     fn show_image(&mut self, name: String, path: String) -> Result<()> {
-        let dyn_img = image::io::Reader::open(path.to_owned())?.decode()?;
+        let dyn_img = imageproc::image::io::Reader::open(path.to_owned())?.decode()?;
         let image = self.picker.new_resize_protocol(dyn_img);
         self.widgets.insert(
             name.to_owned(),

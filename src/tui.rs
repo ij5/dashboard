@@ -122,6 +122,7 @@ pub fn to_ansi(current_buffer: Buffer, last_buffer: Arc<Mutex<Buffer>>) -> Strin
     output
 }
 
+#[allow(dead_code)]
 fn to_rgb(color: Color) -> Rgb<u8> {
     let ansi: [u8; 3] = match color {
         Color::Black => [0, 0, 0],
@@ -148,6 +149,7 @@ fn to_rgb(color: Color) -> Rgb<u8> {
     Rgb(ansi)
 }
 
+#[allow(dead_code)]
 pub fn screenshot(
     buffers: Buffer,
     num_pixels: Rect,

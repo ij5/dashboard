@@ -13,7 +13,6 @@ const term = new Terminal();
 term.loadAddon(new WebglAddon());
 
 websocket.onclose = () => {
-  term.clear()
 }
 
 websocket.onopen = () => {

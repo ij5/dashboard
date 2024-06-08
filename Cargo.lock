@@ -256,12 +256,6 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
-version = "0.21.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
-
-[[package]]
-name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -413,9 +407,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.0.98"
+version = "1.0.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41c270e7540d725e65ac7f1b212ac8ce349719624d7bcff99f8e2e488e8cf03f"
+checksum = "96c51067fd44124faa7f870b4b1c969379ad32b2ba805aa959430ceaa384f695"
 dependencies = [
  "jobserver",
  "libc",
@@ -1356,13 +1350,9 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "color_quant",
- "exr",
- "gif",
  "jpeg-decoder",
  "num-traits",
  "png",
- "qoi",
- "tiff",
 ]
 
 [[package]]
@@ -1514,9 +1504,6 @@ name = "jpeg-decoder"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5d4a7da358eff58addd2877a45865158f0d78c911d43a5784ceb7bbf52833b0"
-dependencies = [
- "rayon",
-]
 
 [[package]]
 name = "js-sys"
@@ -1679,9 +1666,9 @@ dependencies = [
 
 [[package]]
 name = "malachite"
-version = "0.4.10"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af3113d205e637ffd179dcf060a4e6ae68b5be8ffacfdc46edde605d0a6b59ca"
+checksum = "5ec75c8919dd516ed0ee247046a5950113ebcb06fbd3140f3cefb917d6b50fa5"
 dependencies = [
  "malachite-base",
  "malachite-nz",
@@ -1690,9 +1677,9 @@ dependencies = [
 
 [[package]]
 name = "malachite-base"
-version = "0.4.10"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b061827ec0e6deed7e957ba7441fdad939f166e8ae20e309b16c5566f24f326a"
+checksum = "98ca40106fdb86fe664e5a1697e0246fe5c5461195dbb4f4df91a88283b76a09"
 dependencies = [
  "hashbrown",
  "itertools 0.11.0",
@@ -1715,9 +1702,9 @@ dependencies = [
 
 [[package]]
 name = "malachite-nz"
-version = "0.4.10"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dff0adc9a7036d11a2ad7ef1bf38e165916dcaa6f258b732a78c754342130cb"
+checksum = "6117914d26f55be8be3cd874e8ab4c8292c96901613d3dde4381cdd586997062"
 dependencies = [
  "itertools 0.11.0",
  "libm",
@@ -1726,9 +1713,9 @@ dependencies = [
 
 [[package]]
 name = "malachite-q"
-version = "0.4.10"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bea622213a3a8233c8f5e1024bb9a257caf17205ca64b0af5d5502b4c0e1df2"
+checksum = "4bd3fad92242d433e28335f8d10fec0bfc712b00a2d7e135f8920bbc387dfeaa"
 dependencies = [
  "itertools 0.11.0",
  "malachite-base",
@@ -2140,9 +2127,9 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "openssl-src"
-version = "300.2.1+3.2.0"
+version = "300.3.1+3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fe476c29791a5ca0d1273c697e96085bbabbbea2ef7afd5617e78a4b40332d3"
+checksum = "7259953d42a81bf137fbbd73bd30a8e1914d6dce43c2b90ed575783a22608b91"
 dependencies = [
  "cc",
 ]
@@ -2349,9 +2336,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.84"
+version = "1.0.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec96c6a92621310b51366f1e28d05ef11489516e93be030060e5fc12024a49d6"
+checksum = "22244ce15aa966053a896d1accb3a6e68469b97c7f33f284b99f0d576879fc23"
 dependencies = [
  "unicode-ident",
 ]
@@ -2490,14 +2477,14 @@ dependencies = [
 
 [[package]]
 name = "ratatui-image"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2264bdb808c89e8395480cfce32c197e75a3d6171063e913bca12e7919a333da"
+checksum = "07d1ed81eabd67488a23fd502b770dc09106918d32ec1746cd20ccc7dd46937f"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "dyn-clone",
  "icy_sixel",
- "image 0.24.9",
+ "image 0.25.1",
  "rand",
  "ratatui",
  "rustix",
@@ -3465,7 +3452,7 @@ version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
 dependencies = [
- "strum_macros 0.26.2",
+ "strum_macros 0.26.4",
 ]
 
 [[package]]
@@ -3483,11 +3470,11 @@ dependencies = [
 
 [[package]]
 name = "strum_macros"
-version = "0.26.2"
+version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
+checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "rustversion",
@@ -4192,9 +4179,9 @@ checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8parse"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
+checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
