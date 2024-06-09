@@ -2,9 +2,11 @@ import '@xterm/xterm/css/xterm.css'
 import './style.css'
 import { Terminal } from '@xterm/xterm'
 import { WebglAddon } from '@xterm/addon-webgl';
+import { CanvasAddon } from '@xterm/addon-canvas';
 
 const term = new Terminal();
-term.loadAddon(new WebglAddon());
+// term.loadAddon(new WebglAddon());
+term.loadAddon(new CanvasAddon());
 
 let websocket = new WebSocket(
   import.meta.env.PROD ? `wss://${import.meta.env.VITE_API}/ws` : `ws://${import.meta.env.VITE_API}/ws`
