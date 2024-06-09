@@ -811,11 +811,19 @@ impl App<'_> {
                 });
             }
             KeyCode::Char('s') => {
-                let _ = self.send.send(modules::dashboard_sys::FrameData {
-                    action: "screenshot".to_owned(),
-                    name: "output.png".to_owned(),
-                    value: serde_json::Value::Null,
-                });
+                // let _ = self.send.send(modules::dashboard_sys::FrameData {
+                //     action: "screenshot".to_owned(),
+                //     name: "output.png".to_owned(),
+                //     value: serde_json::Value::Null,
+                // });
+                match serde_json::to_string(&self.state) {
+                    Ok(json) => {
+                        let _ = std::fs::write("data.json", json);
+                    }
+                    Err(e) => {
+                        let _ = log::println(&format!("StateSavingError: {:?}", e));
+                    }
+                }
             }
             KeyCode::Char('=' | '+') => {
                 self.state.w += 2;
