@@ -3,14 +3,14 @@ import './style.css'
 import { Terminal } from '@xterm/xterm'
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 // import { WebglAddon } from '@xterm/addon-webgl';
-// import { CanvasAddon } from '@xterm/addon-canvas';
+import { CanvasAddon } from '@xterm/addon-canvas';
 
 const term = new Terminal({
   fontSize: 16,
   allowProposedApi: true,
 });
 // term.loadAddon(new WebglAddon());
-// term.loadAddon(new CanvasAddon());
+term.loadAddon(new CanvasAddon());
 term.loadAddon(new Unicode11Addon());
 
 
