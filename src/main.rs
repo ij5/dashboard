@@ -78,7 +78,7 @@ async fn main() -> color_eyre::Result<()> {
     let mut terminal = tui::init()?;
     let cloned_sender = sender.clone();
     let cloned_init = init_buffer.clone();
-    let handle = tokio::spawn(async move {
+    let ws_handle = tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             tokio::spawn(serve(
                 stream,
@@ -91,7 +91,7 @@ async fn main() -> color_eyre::Result<()> {
     let result = App::new(actions, size, init_buffer.clone(), sender).run(&mut terminal);
 
     tui::restore()?;
-    handle.abort();
+    ws_handle.abort();
 
     match result {
         Err(e) => {
@@ -112,7 +112,16 @@ async fn serve(
     let (mut ws_sender, _) = ws_stream.split();
     let buffer = init_buffer.lock().unwrap().clone();
     let default_buffer = Buffer::empty(buffer.area);
-    let output = tui::to_ansi(buffer, default_buffer);
+    let output = tui::to_ansi(buffer.clone(), default_buffer);
+
+    let mut byte_array = json!({
+        "cols": buffer.area.height,
+        "rows": buffer.area.width,
+    })
+    .to_string()
+    .into_bytes();
+    byte_array.insert(0, 1);
+    let _ = ws_sender.send(Message::Binary(byte_array)).await;
     let mut byte_array = output.into_bytes();
     byte_array.insert(0, 0);
     let _ = ws_sender.send(Message::Binary(byte_array)).await;
@@ -740,17 +749,23 @@ impl App<'_> {
                         }
                     }
                     event::Event::Resize(w, h) => {
+                        let _ = log::println("resize");
                         let size = terminal.size()?;
+                        let mut byte_array = json!({
+                            "rows": w,
+                            "cols": h,
+                        })
+                        .to_string()
+                        .into_bytes();
+                        byte_array.insert(0, 1);
+                        self.ws_sender.send(byte_array)?;
+                        let buffer = self.init_buffer.lock().unwrap().clone();
+                        let mut result =
+                            tui::to_ansi(buffer.clone(), Buffer::empty(buffer.area)).into_bytes();
+                        result.insert(0, 0);
+                        self.ws_sender.send(result)?;
                         if w != size.width || h != size.height {
                             terminal.resize(Rect::new(0, 0, w, h))?;
-                            let mut byte_array = json!({
-                                "rows": w,
-                                "cols": h,
-                            })
-                            .to_string()
-                            .into_bytes();
-                            byte_array.insert(0, 1);
-                            let _ = self.ws_sender.send(byte_array);
                         }
                     }
                     _ => {}

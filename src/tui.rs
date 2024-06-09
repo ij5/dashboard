@@ -24,7 +24,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier},
-    Terminal, Viewport,
+    Terminal,
 };
 
 pub type TUI = Terminal<CrosstermBackend<Stdout>>;
@@ -32,11 +32,7 @@ pub type TUI = Terminal<CrosstermBackend<Stdout>>;
 pub fn init() -> io::Result<TUI> {
     execute!(stdout(), EnterAlternateScreen)?;
     enable_raw_mode()?;
-    let viewport = Viewport::Fullscreen;
-    Terminal::with_options(
-        CrosstermBackend::new(stdout()),
-        ratatui::TerminalOptions { viewport },
-    )
+    Terminal::new(CrosstermBackend::new(stdout()))
 }
 
 pub fn to_ansi(current_buffer: Buffer, last_buffer: Buffer) -> String {

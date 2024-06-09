@@ -3,21 +3,22 @@ import './style.css'
 import { Terminal } from '@xterm/xterm'
 import { WebglAddon } from '@xterm/addon-webgl';
 
-let websocket = new WebSocket(
-  import.meta.env.PROD ? `wss://${location.hostname}/ws` : `ws://${import.meta.env.VITE_API}/ws`
-)
-
-websocket.binaryType = 'arraybuffer';
-
 const term = new Terminal();
 term.loadAddon(new WebglAddon());
+
+let websocket = new WebSocket(
+  import.meta.env.PROD ? `wss://${import.meta.env.VITE_API}/ws` : `ws://${import.meta.env.VITE_API}/ws`
+);
+
+websocket.binaryType = 'arraybuffer';
 
 websocket.onclose = () => {
 }
 
 websocket.onopen = () => {
   term.open(document.getElementById('app')!);
-  term.resize(160, 45);
+  term.options.disableStdin = true;
+  term.options.scrollOnUserInput = false;
 }
 
 websocket.onmessage = (data) => {
@@ -29,6 +30,7 @@ websocket.onmessage = (data) => {
   } else if (cmd === 1) {
     let source = JSON.parse(new TextDecoder().decode(raw));
     console.log(source)
-    term.resize(source.cols, source.rows);
+    term.resize(source.rows, source.cols);
+    term.reset();
   }
 }
