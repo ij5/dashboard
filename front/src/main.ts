@@ -22,6 +22,13 @@ websocket.onopen = () => {
 
 websocket.onmessage = (data) => {
   let raw = new Uint8Array(data.data);
-  console.log(raw.byteLength);
-  term.write(raw);
+  const cmd = raw[0];
+  raw = raw.slice(1);
+  if (cmd === 0) {
+    term.write(raw);
+  } else if (cmd === 1) {
+    let source = JSON.parse(new TextDecoder().decode(raw));
+    console.log(source)
+    term.resize(source.cols, source.rows);
+  }
 }

@@ -27,6 +27,7 @@ use ratatui_image::{
 };
 use rustpython_vm::{self as vm, convert::ToPyObject, scope::Scope, AsObject, PyResult};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tokio_tungstenite::tungstenite::Message;
@@ -87,8 +88,7 @@ async fn main() -> color_eyre::Result<()> {
         }
     });
 
-    let result = App::new(actions, size, init_buffer.clone())
-        .run(&mut terminal, sender);
+    let result = App::new(actions, size, init_buffer.clone(), sender).run(&mut terminal);
 
     tui::restore()?;
     handle.abort();
@@ -113,7 +113,9 @@ async fn serve(
     let buffer = init_buffer.lock().unwrap().clone();
     let default_buffer = Buffer::empty(buffer.area);
     let output = tui::to_ansi(buffer, default_buffer);
-    let _ = ws_sender.send(Message::Binary(output.into_bytes())).await;
+    let mut byte_array = output.into_bytes();
+    byte_array.insert(0, 0);
+    let _ = ws_sender.send(Message::Binary(byte_array)).await;
     while let Ok(msg) = receiver.recv().await {
         let result = ws_sender.send(Message::Binary(msg)).await;
         match result {
@@ -152,6 +154,7 @@ pub struct App<'a> {
     size: Option<(u16, u16)>,
     screenshot: String,
 
+    ws_sender: Sender<Vec<u8>>,
     init_buffer: Arc<Mutex<Buffer>>,
 }
 
@@ -270,6 +273,7 @@ impl App<'_> {
         actions: Vec<Action>,
         size: Option<(u16, u16)>,
         init_buffer: Arc<Mutex<Buffer>>,
+        sender: Sender<Vec<u8>>,
     ) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
@@ -313,6 +317,7 @@ impl App<'_> {
             size,
             screenshot: String::new(),
             init_buffer,
+            ws_sender: sender,
         }
     }
 
@@ -414,7 +419,7 @@ impl App<'_> {
         Ok(())
     }
 
-    pub fn run(&mut self, terminal: &mut tui::TUI, sender: Sender<Vec<u8>>) -> Result<()> {
+    pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         self.interpreter.enter(|vm| {
             vm.insert_sys_path(vm.new_pyobj("scripts"))
                 .expect("add path");
@@ -441,15 +446,15 @@ impl App<'_> {
                 time = Instant::now();
                 self.exec()?;
 
-                let output = tui::to_ansi(
-                    temp_buf.clone(),
-                    self.init_buffer.lock().unwrap().clone(),
-                );
+                let output =
+                    tui::to_ansi(temp_buf.clone(), self.init_buffer.lock().unwrap().clone());
                 *self.init_buffer.lock().unwrap() = temp_buf;
                 if output.len() == 0 {
                     continue;
                 }
-                let _ = sender.send(output.into_bytes());
+                let mut byte_array = output.into_bytes();
+                byte_array.insert(0, 0);
+                let _ = self.ws_sender.send(byte_array);
                 // *self.last_buffer.lock().unwrap() = terminal.current_buffer_mut().clone();
             }
             self.handle_events(terminal)?;
@@ -738,6 +743,14 @@ impl App<'_> {
                         let size = terminal.size()?;
                         if w != size.width || h != size.height {
                             terminal.resize(Rect::new(0, 0, w, h))?;
+                            let mut byte_array = json!({
+                                "rows": w,
+                                "cols": h,
+                            })
+                            .to_string()
+                            .into_bytes();
+                            byte_array.insert(0, 1);
+                            let _ = self.ws_sender.send(byte_array);
                         }
                     }
                     _ => {}
