@@ -1,7 +1,7 @@
 import '@xterm/xterm/css/xterm.css'
 import './style.css'
 import { Terminal } from '@xterm/xterm'
-import { WebglAddon } from '@xterm/addon-webgl';
+// import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 
 const term = new Terminal();
