@@ -68,26 +68,27 @@ async fn main() -> color_eyre::Result<()> {
         size = Some((_size[0], _size[1]));
     }
 
-    let last_buffer = Arc::new(Mutex::new(Buffer::default()));
+    let init_buffer = Arc::new(Mutex::new(Buffer::default()));
 
     let try_socket = TcpListener::bind("0.0.0.0:8282".to_string()).await;
     let listener = try_socket.expect("Failed to bind 0.0.0.0:8282");
     let (sender, _) = channel::<Vec<u8>>(128);
 
     let mut terminal = tui::init()?;
-    let cloned_buffer = last_buffer.clone();
     let cloned_sender = sender.clone();
+    let cloned_init = init_buffer.clone();
     let handle = tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             tokio::spawn(serve(
                 stream,
                 cloned_sender.subscribe(),
-                cloned_buffer.clone(),
+                cloned_init.clone(),
             ));
         }
     });
 
-    let result = App::new(actions, size, last_buffer.clone()).run(&mut terminal, sender);
+    let result = App::new(actions, size, init_buffer.clone())
+        .run(&mut terminal, sender);
 
     tui::restore()?;
     handle.abort();
@@ -103,15 +104,15 @@ async fn main() -> color_eyre::Result<()> {
 async fn serve(
     stream: TcpStream,
     mut receiver: Receiver<Vec<u8>>,
-    last_buffer: Arc<Mutex<Buffer>>,
+    init_buffer: Arc<Mutex<Buffer>>,
 ) {
     let ws_stream = tokio_tungstenite::accept_async(stream)
         .await
         .expect("Error during the websocket handshake occurred");
     let (mut ws_sender, _) = ws_stream.split();
-    let buffer = last_buffer.lock().unwrap().clone();
-    let default_buffer = Buffer::default();
-    let output = tui::to_ansi(buffer, Arc::new(Mutex::new(default_buffer)));
+    let buffer = init_buffer.lock().unwrap().clone();
+    let default_buffer = Buffer::empty(buffer.area);
+    let output = tui::to_ansi(buffer, default_buffer);
     let _ = ws_sender.send(Message::Binary(output.into_bytes())).await;
     while let Ok(msg) = receiver.recv().await {
         let result = ws_sender.send(Message::Binary(msg)).await;
@@ -151,7 +152,7 @@ pub struct App<'a> {
     size: Option<(u16, u16)>,
     screenshot: String,
 
-    last_buffer: Arc<Mutex<Buffer>>,
+    init_buffer: Arc<Mutex<Buffer>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -268,7 +269,7 @@ impl App<'_> {
     pub fn new(
         actions: Vec<Action>,
         size: Option<(u16, u16)>,
-        last_buffer: Arc<Mutex<Buffer>>,
+        init_buffer: Arc<Mutex<Buffer>>,
     ) -> Self {
         let mut settings = vm::Settings::default();
         settings.allow_external_library = true;
@@ -311,7 +312,7 @@ impl App<'_> {
             state,
             size,
             screenshot: String::new(),
-            last_buffer,
+            init_buffer,
         }
     }
 
@@ -409,7 +410,7 @@ impl App<'_> {
             }
         }
         self.current_loading.clear();
-        *self.last_buffer.lock().unwrap() = terminal.current_buffer_mut().clone();
+        *self.init_buffer.lock().unwrap() = terminal.current_buffer_mut().clone();
         Ok(())
     }
 
@@ -421,8 +422,10 @@ impl App<'_> {
         self.init(terminal)?;
         let mut time = Instant::now();
         while !self.exit {
-            let frame = terminal.draw(|frame| {
+            let mut temp_buf = Buffer::default();
+            terminal.draw(|frame| {
                 self.render_frame(frame);
+                temp_buf = frame.buffer_mut().clone();
                 // if self.screenshot.len() > 0 {
                 //     let filepath = self.screenshot.clone();
                 //     self.screenshot.clear();
@@ -439,15 +442,15 @@ impl App<'_> {
                 self.exec()?;
 
                 let output = tui::to_ansi(
-                    frame.buffer.clone(),
-                    self.last_buffer.clone(),
+                    temp_buf.clone(),
+                    self.init_buffer.lock().unwrap().clone(),
                 );
+                *self.init_buffer.lock().unwrap() = temp_buf;
                 if output.len() == 0 {
                     continue;
                 }
                 let _ = sender.send(output.into_bytes());
                 // *self.last_buffer.lock().unwrap() = terminal.current_buffer_mut().clone();
-                // self.last_buffer.lock().unwrap().merge(&frame.buffer.clone());
             }
             self.handle_events(terminal)?;
             self.consumer(terminal)?;

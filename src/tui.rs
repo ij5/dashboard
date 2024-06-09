@@ -1,6 +1,6 @@
 use std::{
     io::{self, stdout, Stdout, Write},
-    sync::{Arc, Mutex},
+    // sync::{Arc, Mutex},
 };
 
 use ab_glyph::{FontRef, PxScale};
@@ -39,9 +39,9 @@ pub fn init() -> io::Result<TUI> {
     )
 }
 
-pub fn to_ansi(current_buffer: Buffer, last_buffer: Arc<Mutex<Buffer>>) -> String {
+pub fn to_ansi(current_buffer: Buffer, last_buffer: Buffer) -> String {
     let mut output = String::new();
-    let updates = last_buffer.lock().unwrap().clone().diff(&current_buffer);
+    let updates = last_buffer.diff(&current_buffer);
     let mut fg = Color::Reset;
     let mut bg = Color::Reset;
     let mut modifier = Modifier::empty();
@@ -118,7 +118,7 @@ pub fn to_ansi(current_buffer: Buffer, last_buffer: Arc<Mutex<Buffer>>) -> Strin
     let _ = SetBackgroundColor(CColor::Reset).write_ansi(&mut output);
     let _ = SetUnderlineColor(CColor::Reset).write_ansi(&mut output);
     let _ = SetAttribute(Attribute::Reset).write_ansi(&mut output);
-    last_buffer.lock().unwrap().merge(&current_buffer.clone());
+    // last_buffer.lock().unwrap().merge(&current_buffer.clone());
     output
 }
 
