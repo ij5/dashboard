@@ -713,7 +713,11 @@ impl App<'_> {
                     let result = res.call((), vm);
                     match result {
                         Err(e) => {
-                            let _ = log::println(&format!("{:?}", e.as_object().repr(vm)));
+                            let _ = log::println(&format!("E: {}", e.clone().to_pyobject(vm).repr(vm).unwrap().as_str()));
+                            let traceback = e.traceback().unwrap();
+                            for tb in traceback.iter() {
+                                let _ = log::println(&format!("Traceback: {:?}", tb.frame.code,));
+                            }
                         }
                         _ => {}
                     }
