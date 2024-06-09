@@ -109,7 +109,7 @@ async fn serve(
     let ws_stream = tokio_tungstenite::accept_async(stream)
         .await
         .expect("Error during the websocket handshake occurred");
-    let (mut ws_sender, _) = ws_stream.split();
+    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let buffer = init_buffer.lock().unwrap().clone();
     let default_buffer = Buffer::empty(buffer.area);
     let output = tui::to_ansi(buffer.clone(), default_buffer);
@@ -120,16 +120,35 @@ async fn serve(
     })
     .to_string()
     .into_bytes();
-    byte_array.insert(0, 1);
+    byte_array.insert(0, 2);
     let _ = ws_sender.send(Message::Binary(byte_array)).await;
     let mut byte_array = output.into_bytes();
-    byte_array.insert(0, 0);
+    byte_array.insert(0, 1);
     let _ = ws_sender.send(Message::Binary(byte_array)).await;
-    while let Ok(msg) = receiver.recv().await {
-        let result = ws_sender.send(Message::Binary(msg)).await;
-        match result {
-            Ok(_) => {}
-            Err(_) => break,
+    loop {
+        tokio::select! {
+            msg = ws_receiver.next() => {
+                match msg {
+                    Some(Ok(Message::Binary(msg))) => {
+                        let cmd = msg.get(0).cloned().unwrap_or(0);
+                        if cmd == 1 {
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            msg = receiver.recv() => {
+                match msg {
+                    Ok(msg) => {
+                        let result = ws_sender.send(Message::Binary(msg)).await;
+                        match result {
+                            Ok(_) => {}
+                            Err(_) => break,
+                        }
+                    }
+                    _ => break,
+                }
+            }
         }
     }
 }
@@ -165,6 +184,8 @@ pub struct App<'a> {
 
     ws_sender: Sender<Vec<u8>>,
     init_buffer: Arc<Mutex<Buffer>>,
+
+    resized: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -327,6 +348,7 @@ impl App<'_> {
             screenshot: String::new(),
             init_buffer,
             ws_sender: sender,
+            resized: false,
         }
     }
 
@@ -454,10 +476,10 @@ impl App<'_> {
             if time.elapsed().as_millis() > 1000 {
                 time = Instant::now();
                 self.exec()?;
-
                 let output =
                     tui::to_ansi(temp_buf.clone(), self.init_buffer.lock().unwrap().clone());
                 *self.init_buffer.lock().unwrap() = temp_buf;
+
                 if output.len() == 0 {
                     continue;
                 }
@@ -661,6 +683,12 @@ impl App<'_> {
             }
             "reload" => {
                 self.init(terminal)?;
+                let buffer = self.init_buffer.lock().unwrap().clone();
+                let default_buffer = Buffer::empty(buffer.area);
+                let output = tui::to_ansi(buffer, default_buffer);
+                let mut byte_array = output.into_bytes();
+                byte_array.insert(0, 1);
+                let _ = self.ws_sender.send(byte_array);
             }
             "exit" => {
                 self.exit();
@@ -749,7 +777,6 @@ impl App<'_> {
                         }
                     }
                     event::Event::Resize(w, h) => {
-                        let _ = log::println("resize");
                         let size = terminal.size()?;
                         let mut byte_array = json!({
                             "rows": w,
@@ -757,15 +784,11 @@ impl App<'_> {
                         })
                         .to_string()
                         .into_bytes();
-                        byte_array.insert(0, 1);
+                        byte_array.insert(0, 2);
                         let _ = self.ws_sender.send(byte_array);
-                        let buffer = self.init_buffer.lock().unwrap().clone();
-                        let mut result =
-                            tui::to_ansi(buffer.clone(), Buffer::empty(buffer.area)).into_bytes();
-                        result.insert(0, 0);
-                        let _ = self.ws_sender.send(result);
                         if w != size.width || h != size.height {
                             terminal.resize(Rect::new(0, 0, w, h))?;
+                            self.resized = true;
                         }
                     }
                     _ => {}
@@ -825,7 +848,6 @@ impl Widget for &mut App<'_> {
         let layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(25), Constraint::Percentage(75)])
-            .margin(1)
             .split(vroot[0]);
         let left_layout = Layout::default()
             .direction(Direction::Vertical)

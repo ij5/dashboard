@@ -2,11 +2,19 @@ import '@xterm/xterm/css/xterm.css'
 import './style.css'
 import { Terminal } from '@xterm/xterm'
 // import { WebglAddon } from '@xterm/addon-webgl';
-import { CanvasAddon } from '@xterm/addon-canvas';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebglAddon } from '@xterm/addon-webgl';
 
-const term = new Terminal();
-// term.loadAddon(new WebglAddon());
-term.loadAddon(new CanvasAddon());
+const term = new Terminal({
+  fontSize: 16,
+  allowProposedApi: true,
+});
+term.loadAddon(new WebglAddon());
+// term.loadAddon(new CanvasAddon());
+term.loadAddon(new Unicode11Addon());
+
+
+term.unicode.activeVersion = "11";
 
 let websocket = new WebSocket(
   import.meta.env.PROD ? `wss://${import.meta.env.VITE_API}/ws` : `ws://${import.meta.env.VITE_API}/ws`
@@ -30,9 +38,11 @@ websocket.onmessage = (data) => {
   if (cmd === 0) {
     term.write(raw);
   } else if (cmd === 1) {
-    let source = JSON.parse(new TextDecoder().decode(raw));
-    console.log(source)
-    term.resize(source.rows, source.cols);
     term.reset();
+    term.write(raw);
+  } else if (cmd === 2) {
+    let source = JSON.parse(new TextDecoder().decode(raw));
+    term.clear();
+    term.resize(source.rows, source.cols);
   }
 }
