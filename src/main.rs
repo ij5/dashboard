@@ -758,12 +758,12 @@ impl App<'_> {
                         .to_string()
                         .into_bytes();
                         byte_array.insert(0, 1);
-                        self.ws_sender.send(byte_array)?;
+                        let _ = self.ws_sender.send(byte_array);
                         let buffer = self.init_buffer.lock().unwrap().clone();
                         let mut result =
                             tui::to_ansi(buffer.clone(), Buffer::empty(buffer.area)).into_bytes();
                         result.insert(0, 0);
-                        self.ws_sender.send(result)?;
+                        let _ = self.ws_sender.send(result);
                         if w != size.width || h != size.height {
                             terminal.resize(Rect::new(0, 0, w, h))?;
                         }
