@@ -420,8 +420,12 @@ impl App<'_> {
                     Err(e) => {
                         let _ = log::println(&format!(
                             "File: {:?}",
-                            e.to_pyobject(vm).repr(vm).unwrap().as_str()
+                            e.clone().to_pyobject(vm).repr(vm).unwrap().as_str()
                         ));
+                        let traceback = e.traceback().unwrap();
+                        for tb in traceback.iter() {
+                            let _ = log::println(&format!("Traceback: {:?}", tb.frame.code,));
+                        }
                         return Ok(scp);
                     }
                 }
@@ -494,7 +498,7 @@ impl App<'_> {
         Ok(())
     }
     fn consumer(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let data = match self.recv.try_recv() {
+        let data = match self.recv.recv_timeout(Duration::from_millis(100)) {
             Ok(data) => data,
             _ => {
                 return Ok(());
@@ -713,7 +717,10 @@ impl App<'_> {
                     let result = res.call((), vm);
                     match result {
                         Err(e) => {
-                            let _ = log::println(&format!("E: {}", e.clone().to_pyobject(vm).repr(vm).unwrap().as_str()));
+                            let _ = log::println(&format!(
+                                "E: {}",
+                                e.clone().to_pyobject(vm).repr(vm).unwrap().as_str()
+                            ));
                             let traceback = e.traceback().unwrap();
                             for tb in traceback.iter() {
                                 let _ = log::println(&format!("Traceback: {:?}", tb.frame.code,));
