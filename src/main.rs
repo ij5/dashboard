@@ -362,8 +362,8 @@ impl App<'_> {
             second = true;
         }
         let _ = terminal.clear();
-        self.modules.clear();
-        self.widgets.retain(|key, _v| key.starts_with("task_"));
+        self.modules.retain(|key, _v| key.starts_with("task_"));
+        self.widgets.clear();
         self.failed.clear();
         self.actions = actions::initialize_scripts()?;
         for action in self.actions.clone() {
