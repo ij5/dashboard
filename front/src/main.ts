@@ -13,8 +13,10 @@ const term = new Terminal({
 term.loadAddon(new CanvasAddon());
 term.loadAddon(new Unicode11Addon());
 
-
 term.unicode.activeVersion = "11";
+term.open(document.getElementById('app')!);
+term.options.disableStdin = true;
+term.options.scrollOnUserInput = false;
 
 function createWebsocket() {
   return new WebSocket(
@@ -28,6 +30,7 @@ websocket.binaryType = 'arraybuffer';
 
 function setupWebsocket() {
   websocket.onclose = async () => {
+    term.clear();
     await new Promise(res => {
       setTimeout(res, 1000);
     });
@@ -36,9 +39,7 @@ function setupWebsocket() {
   }
 
   websocket.onopen = () => {
-    term.open(document.getElementById('app')!);
-    term.options.disableStdin = true;
-    term.options.scrollOnUserInput = false;
+    term.clear();
   }
 
   websocket.onmessage = (data) => {
