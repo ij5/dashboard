@@ -110,15 +110,15 @@ def todo_add(id: str, text: str, by: str, deadline: int):
     send(id=id, action="todo_add", name=id, value=dict(text=text, by=by, deadline=deadline))
 
 def todo_done(index: int):
-    send(action="todo_done", name="", value=dict(index=index))
+    send(id="todo", action="todo_done", name="", value=dict(index=index))
 
 
 def todo_del(index: int):
-    send(action="todo_del", name="", value=dict(index=index))
+    send(id="todo", action="todo_del", name="", value=dict(index=index))
 
 
 def exit():
-    send(action="exit", name="", value=dict())
+    send(id="exit", action="exit", name="", value=dict())
 
 
 class FileOut(object):
