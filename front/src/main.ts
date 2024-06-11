@@ -18,24 +18,16 @@ term.open(document.getElementById('app')!);
 term.options.disableStdin = true;
 term.options.scrollOnUserInput = false;
 
-function createWebsocket() {
-  return new WebSocket(
+function startWebsocket() {
+  let websocket: WebSocket|null = new WebSocket(
     import.meta.env.PROD ? `wss://${import.meta.env.VITE_API}/ws` : `ws://${import.meta.env.VITE_API}/ws`
   );
-}
-
-let websocket = createWebsocket();
-
-websocket.binaryType = 'arraybuffer';
-
-function setupWebsocket() {
-  websocket.onclose = async () => {
+  websocket.binaryType = 'arraybuffer';
+  websocket.onclose = () => {
     term.clear();
-    await new Promise(res => {
-      setTimeout(res, 1000);
-    });
-    websocket = createWebsocket();
-    setupWebsocket();
+    websocket?.close();
+    websocket = null;
+    setTimeout(startWebsocket, 1000);
   }
 
   websocket.onopen = () => {
@@ -60,4 +52,5 @@ function setupWebsocket() {
 
 }
 
-setupWebsocket();
+startWebsocket();
+
