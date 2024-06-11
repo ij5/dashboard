@@ -362,8 +362,8 @@ impl App<'_> {
             second = true;
         }
         let _ = terminal.clear();
-        self.modules.retain(|key, _v| key.starts_with("task_"));
-        self.widgets.clear();
+        self.modules.clear();
+        self.widgets.retain(|key, _v| key.ends_with("_task"));
         self.failed.clear();
         self.actions = actions::initialize_scripts()?;
         for action in self.actions.clone() {
@@ -533,7 +533,7 @@ impl App<'_> {
                     align: alignment,
                     name: data.name.to_owned(),
                 });
-                let _ = self.widgets.insert(data.name.to_owned(), state);
+                let _ = self.widgets.insert(data.id.to_owned(), state);
             }
             "chart" => {
                 let options: ChartWidget = match serde_json::from_value(value) {
@@ -544,7 +544,7 @@ impl App<'_> {
                     }
                 };
                 let state = WidgetState::Chart(options);
-                let _ = self.widgets.insert(data.name.to_owned(), state);
+                let _ = self.widgets.insert(data.id.to_owned(), state);
             }
             "color_text" => {
                 let lines = value.get("lines").cloned();
@@ -603,7 +603,7 @@ impl App<'_> {
                     name: data.name.to_owned(),
                     border_color: Color::from_str(&border_color).unwrap_or(Color::White),
                 });
-                self.widgets.insert(data.name.to_owned(), state);
+                self.widgets.insert(data.id.to_owned(), state);
             }
             "clear" => {
                 self.widgets.remove(&data.name);
@@ -650,7 +650,7 @@ impl App<'_> {
                     let _ = log::println("no file path");
                     return Ok(());
                 }
-                self.show_image(data.name, filepath)?;
+                self.show_image(data.id, filepath)?;
             }
             "todo_add" => {
                 let by = check_str(value.get("by").cloned());
@@ -751,15 +751,15 @@ impl App<'_> {
         }
         Ok(())
     }
-    fn show_image(&mut self, name: String, path: String) -> Result<()> {
+    fn show_image(&mut self, id: String, path: String) -> Result<()> {
         let dyn_img = imageproc::image::io::Reader::open(path.to_owned())?.decode()?;
         let image = self.picker.new_resize_protocol(dyn_img);
         self.widgets.insert(
-            name.to_owned(),
+            id.to_owned(),
             WidgetState::Image(ImageWidget {
                 area: Rect::ZERO,
                 filepath: path,
-                name,
+                name: id,
                 image,
             }),
         );
@@ -821,6 +821,7 @@ impl App<'_> {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('r') => {
                 let _ = self.send.send(modules::dashboard_sys::FrameData {
+                    id: "reload".to_owned(),
                     action: "reload".to_owned(),
                     name: "reload".to_owned(),
                     value: serde_json::Value::Null,

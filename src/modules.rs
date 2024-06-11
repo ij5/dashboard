@@ -35,6 +35,7 @@ pub mod dashboard_sys {
     #[derive(Clone)]
     pub struct FrameData {
         pub action: String,
+        pub id: String,
         pub name: String,
         pub value: Value,
     }
@@ -44,7 +45,9 @@ pub mod dashboard_sys {
             let action = obj.get_attr("action", vm)?.try_into_value::<String>(vm)?;
             let value = obj.get_attr("value", vm)?.try_into_value::<String>(vm)?;
             let name = obj.get_attr("name", vm)?.try_into_value::<String>(vm)?;
+            let id = obj.get_attr("id", vm)?.try_into_value::<String>(vm)?;
             Ok(FrameData {
+                id,
                 action,
                 value: serde_json::from_str(&value)
                     .map_err(|e| vm.new_value_error(e.to_string()))?,
@@ -69,7 +72,12 @@ pub mod dashboard_sys {
 
     #[pyfunction]
     pub fn reload_scripts() {
-        send(FrameData { action: "reload".to_string(), name: "reload".to_owned(), value: Value::Null });
+        send(FrameData {
+            id: "reload".to_string(),
+            action: "reload".to_string(),
+            name: "reload".to_owned(),
+            value: Value::Null,
+        });
     }
 
     async fn a_fetch(method: String, url: String) -> Result<String> {
