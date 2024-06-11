@@ -6,11 +6,11 @@ use rustpython_vm::pymodule;
 #[pymodule]
 pub mod dashboard_sys {
     use color_eyre::eyre::Result;
-    use crossbeam_channel::Sender;
     use futures::executor;
     use once_cell::sync::OnceCell;
     use rustpython_vm::{PyObject, PyResult, TryFromBorrowedObject, VirtualMachine};
     use serde_json::Value;
+    use tokio::sync::broadcast::Sender;
 
     use crate::log;
 
@@ -32,6 +32,7 @@ pub mod dashboard_sys {
             .expect("initialize failed");
     }
 
+    #[derive(Clone)]
     pub struct FrameData {
         pub action: String,
         pub name: String,

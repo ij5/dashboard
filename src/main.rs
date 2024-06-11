@@ -7,7 +7,6 @@ use std::{
 
 use actions::Action;
 use color_eyre::eyre::{bail, Result};
-use crossbeam_channel::{unbounded, Receiver as CReceiver, Sender as CSender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
 use dotenv::dotenv;
 use futures::{SinkExt, StreamExt};
@@ -93,7 +92,7 @@ async fn main() -> color_eyre::Result<()> {
         }
     });
 
-    let result = App::new(actions, size, init_buffer.clone(), sender).run(&mut terminal);
+    let result = App::new(actions, size, init_buffer.clone(), sender).run(&mut terminal).await;
 
     tui::restore()?;
     ws_handle.abort();
@@ -179,8 +178,8 @@ pub struct App<'a> {
     interpreter: vm::Interpreter,
     current_loading: String,
     picker: Picker,
-    recv: CReceiver<modules::dashboard_sys::FrameData>,
-    send: CSender<modules::dashboard_sys::FrameData>,
+    recv: Receiver<modules::dashboard_sys::FrameData>,
+    send: Sender<modules::dashboard_sys::FrameData>,
     widgets: HashMap<String, WidgetState<'a>>,
     visual: HashMap<String, WidgetState<'a>>,
     state: AppState,
@@ -319,7 +318,7 @@ impl App<'_> {
                 log::println(&format!("PathError: {:?}", e)).expect("log");
             }
         }
-        let (send, recv) = unbounded::<modules::dashboard_sys::FrameData>();
+        let (send, _) = channel(128);
         modules::dashboard_sys::initialize(send.clone());
         let interpreter = vm::Interpreter::with_init(settings, |vm| {
             vm.add_native_modules(rustpython_stdlib::get_module_inits());
@@ -344,7 +343,7 @@ impl App<'_> {
             failed: vec![],
             current_loading: String::new(),
             picker,
-            recv,
+            recv: send.subscribe(),
             send,
             widgets: HashMap::new(),
             visual: HashMap::new(),
@@ -459,7 +458,7 @@ impl App<'_> {
         Ok(())
     }
 
-    pub fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
+    pub async fn run(&mut self, terminal: &mut tui::TUI) -> Result<()> {
         self.interpreter.enter(|vm| {
             vm.insert_sys_path(vm.new_pyobj("scripts"))
                 .expect("add path");
@@ -499,11 +498,12 @@ impl App<'_> {
             }
             self.handle_events(terminal)?;
             self.consumer(terminal)?;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
         Ok(())
     }
     fn consumer(&mut self, terminal: &mut tui::TUI) -> Result<()> {
-        let data = match self.recv.recv_timeout(Duration::from_millis(100)) {
+        let data = match self.recv.try_recv() {
             Ok(data) => data,
             _ => {
                 return Ok(());
@@ -841,11 +841,11 @@ impl App<'_> {
                     }
                 }
             }
-            KeyCode::Char('=' | '+') => {
+            KeyCode::Char('=' | '+' | 'z') => {
                 self.state.w += 2;
                 self.state.h += 1;
             }
-            KeyCode::Char('-') => {
+            KeyCode::Char('-' | 'x') => {
                 self.state.w -= 2;
                 self.state.h -= 1;
             }
