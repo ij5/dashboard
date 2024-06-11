@@ -5,3 +5,7 @@
 /Lib
 /data.json
 /*.png
+/*.json
+/screen.txt
+/process.sh
+.env

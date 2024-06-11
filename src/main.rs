@@ -9,6 +9,7 @@ use actions::Action;
 use color_eyre::eyre::{bail, Result};
 use crossbeam_channel::{unbounded, Receiver as CReceiver, Sender as CSender};
 use crossterm::event::{self, poll, KeyCode, KeyEventKind};
+use dotenv::dotenv;
 use futures::{SinkExt, StreamExt};
 use ratatui::{
     buffer::Buffer,
@@ -39,8 +40,11 @@ mod log;
 mod modules;
 mod tui;
 
+extern crate dotenv;
+
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
+    dotenv().ok();
     errors::install_hooks()?;
     std::fs::write("run.log", "")?;
     let _ = std::fs::create_dir("scripts");
@@ -71,8 +75,9 @@ async fn main() -> color_eyre::Result<()> {
 
     let init_buffer = Arc::new(Mutex::new(Buffer::default()));
 
-    let try_socket = TcpListener::bind("0.0.0.0:8282".to_string()).await;
-    let listener = try_socket.expect("Failed to bind 0.0.0.0:8282");
+    let bind = std::env::var("BIND").unwrap_or("0.0.0.0:8282".to_string());
+    let try_socket = TcpListener::bind(bind.to_owned()).await;
+    let listener = try_socket.expect(&format!("Failed to bind {}", bind.as_str()));
     let (sender, _) = channel::<Vec<u8>>(128);
 
     let mut terminal = tui::init()?;
