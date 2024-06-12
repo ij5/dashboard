@@ -111,8 +111,12 @@ async fn serve(
     init_buffer: Arc<Mutex<Buffer>>,
 ) {
     let ws_stream = tokio_tungstenite::accept_async(stream)
-        .await
-        .expect("Error during the websocket handshake occurred");
+        .await;
+    let ws_stream = if let Ok(s) = ws_stream {
+        s
+    } else {
+        return;
+    };
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let buffer = init_buffer.lock().unwrap().clone();
     let default_buffer = Buffer::empty(buffer.area);
