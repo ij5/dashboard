@@ -2,7 +2,7 @@ use std::panic;
 
 use color_eyre::{config::HookBuilder, eyre};
 
-use crate::tui;
+use crate::{log, tui};
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
@@ -14,6 +14,7 @@ pub fn install_hooks() -> color_eyre::Result<()> {
     panic::set_hook(Box::new(move |panic_info| {
         tui::restore().unwrap();
         panic_hook(panic_info);
+        let _ = log::println(&format!("Panic: {:?}", panic_info));
     }));
 
     // convert from a color_eyre EyreHook to a eyre ErrorHook
@@ -21,6 +22,7 @@ pub fn install_hooks() -> color_eyre::Result<()> {
     eyre::set_hook(Box::new(
         move |error: &(dyn std::error::Error + 'static)| {
             tui::restore().unwrap();
+            let _ = log::println(&format!("Eyre: {:?}", error));
             eyre_hook(error)
         },
     ))?;

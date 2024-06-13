@@ -128,3 +128,4 @@ class FileOut(object):
 
 
 sys.stdout = FileOut()
+sys.stderr = FileOut()
