@@ -12,7 +12,7 @@ pub fn install_hooks() -> color_eyre::Result<()> {
     // convert from a color_eyre PanicHook to a standard panic hook
     // let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
-        tui::restore().unwrap();
+        // tui::restore().unwrap();
         // panic_hook(panic_info);
         let time = SystemTime::now();
         let _ = log::println(&format!("Panic: {:?}: {:?}", time, panic_info));
