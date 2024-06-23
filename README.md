@@ -2,9 +2,13 @@
 
 
 ✅ Create dashboard widgets with Python
+
 ✅ Easy Python APIs
+
 ✅ Pip supported
+
 ✅ Multiple display method supported (Web browser, Linux/Windows Terminal)
+
 
 # Install python package (example)
 ```bash
